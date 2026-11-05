@@ -1,0 +1,11 @@
+[package]
+name = "enbuilder"
+version = "0.1.0"
+edition = "2024"
+description = "Part 1 foundations: Domain, meshes, FieldStore, module scheduler (no physics yet)"
+
+[dependencies]
+# Deliberately empty for Part 1: std only. glam/rayon arrive in later parts.
+
+[profile.test]
+opt-level = 2
