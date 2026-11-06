@@ -1,21 +1,36 @@
 //! enbuilder: physics-driven world generator core.
-//! Part 1 = foundations (domain, meshes, fields, scheduler); Part 2 = terrain and energy (stages A, B).
+//! Part 1 = foundations (domain, meshes, fields, scheduler); Part 2 = terrain and energy (stages A, B);
+//! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`).
+pub mod backend;
+pub mod budget;
 pub mod consts;
 pub mod domain;
 pub mod energy;
 pub mod error;
 pub mod fields;
 pub mod generators;
+#[cfg(feature = "gpu")]
+pub mod gpu;
+pub mod gradient;
 pub mod insolation;
 pub mod math;
 pub mod mesh;
 pub mod module;
+pub mod moisture;
 pub mod noise;
+pub mod precipitation;
+pub mod projection;
+pub mod pressure;
 pub mod rng;
 pub mod scheduler;
 pub mod tectonics;
 pub mod terrain;
+pub mod transport;
 pub mod testmods;
+pub mod testworld;
+pub mod wind;
+pub mod wind_gpu;
+pub mod wind_stepped;
 
 pub use domain::{BoundaryKind, Domain, DomainKind, Fluid, Light, LightKind, Media, SurfaceFrame, VerticalStructure};
 pub use error::{Error, Result};
@@ -27,3 +42,11 @@ pub use insolation::Insolation;
 pub use tectonics::{PaintedPlates, PlateDef, Tectonics};
 pub use terrain::TerrainShaping;
 pub use scheduler::{FeedbackLoop, LoopReport, RunReport, Scheduler};
+pub use budget::{add_climate_pipeline, mean_evap_mm_day, mean_precip_mm_day, run_season, SeasonReport, WaterBudget};
+pub use gradient::GradientOp;
+pub use pressure::{add_atmosphere_stage, PressureModel};
+pub use backend::{make_backend, BackendKind, ComputeBackend, Cpu, CpuF32, PackedMesh};
+pub use wind::DiagnosticWind;
+pub use wind_stepped::{add_atmosphere_stage_stepped, add_atmosphere_stage_stepped_with, Backend, SteppedWind};
+pub use transport::{add_moisture_precip_stage, add_moisture_transport_stage, MoistureTransport};
+pub use moisture::{add_moisture_source_stage, saturation_vapour_pressure, MoistureSource};

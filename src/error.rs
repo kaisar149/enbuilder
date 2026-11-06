@@ -14,6 +14,8 @@ pub enum Error {
     MissingOutput { module: String, field: String },
     NonFinite(String),
     GroupState(String),
+    /// No usable GPU adapter (or the `gpu` feature is not compiled in).
+    NoGpu(String),
     HistoryTruncated { requested: u64, oldest_available: u64 },
 }
 
@@ -34,6 +36,7 @@ impl fmt::Display for Error {
             MissingOutput { module, field } => write!(f, "module '{module}' declared output '{field}' but did not produce it"),
             NonFinite(s) => write!(f, "non-finite value in field '{s}'"),
             GroupState(s) => write!(f, "edit group error: {s}"),
+            NoGpu(s) => write!(f, "no GPU available: {s}"),
             HistoryTruncated { requested, oldest_available } => {
                 write!(f, "history truncated: asked for version {requested}, oldest available is {oldest_available}")
             }

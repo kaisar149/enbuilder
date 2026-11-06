@@ -107,6 +107,12 @@ impl Scheduler {
         self.modules[i].set_param(name, value)
     }
 
+    /// Current value of a module parameter (None if the module or parameter does not exist).
+    pub fn module_param(&self, module: &str, name: &str) -> Option<f64> {
+        let i = self.specs.iter().position(|s| s.name == module)?;
+        self.modules[i].params().get(name)
+    }
+
     /// Fields some module reads that no module produces: caller must supply them.
     pub fn external_inputs(&self) -> &BTreeSet<String> { &self.external_inputs }
 
