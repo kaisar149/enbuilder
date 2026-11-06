@@ -308,6 +308,348 @@ impl Module for WindStress {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Part 4a-2a: ocean subgraph, operator and linear solver (no physics)
+// ---------------------------------------------------------------------------------------------
+//
+// Operator (per ocean cell i, local indices):
+//     (L psi)_i = sum_k w_ik (psi_k - psi_i),   w_ik = (edge_len / edge_dist)_k / area_i,
+// summed over ALL mesh neighbours k. A land (non-ocean) neighbour has psi = 0 (Dirichlet), so it contributes
+// `w_ik * (0 - psi_i)`. Edges that leave the domain (wall/void) carry no term (natural, zero-flux).
+//
+// Symmetry: with c_ik = edge_len/edge_dist (symmetric) and A = diag(area), L = -A^-1 C. L is therefore symmetric in
+// the AREA-WEIGHTED inner product <x,y>_A = sum_i area_i x_i y_i (and in the plain inner product when all areas are
+// equal, e.g. the plane), and negative semi-definite there. The solver works on the equivalent Euclidean-SPD system
+//     (C + sigma A) psi = A b      <=>      (-L + sigma I) psi = b
+// with Jacobi-preconditioned CG, one independent solve per connected ocean component.
+
+/// Iteration controls for the ocean CG. Defaults: relative residual 1e-10, 20000 iterations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CgConfig {
+    /// Stop when `||b - K psi|| <= tol * ||b||` (2-norm of the symmetrised system's residual and right-hand side).
+    pub tol: f64,
+    /// Hard guard: exceeding it returns `Error::NoConvergence` instead of looping.
+    pub max_iters: usize,
+}
+
+impl Default for CgConfig {
+    fn default() -> Self { CgConfig { tol: 1e-10, max_iters: 20_000 } }
+}
+
+/// Per-component solve report.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentSolve {
+    /// Value from the `ocean_component` field.
+    pub id: i64,
+    pub n_cells: usize,
+    pub iterations: usize,
+    /// Final `||r|| / ||rhs||` (0 for a zero right-hand side).
+    pub rel_residual: f64,
+    /// True when the component has no Dirichlet anchor and `sigma == 0` (operator singular): the right-hand side
+    /// had its area-weighted mean removed and the solution is normalised to area-weighted mean zero.
+    pub singular: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OceanSolution {
+    /// Solution per OCEAN-LOCAL cell (same order as `OceanGraph::cells`).
+    pub psi: Vec<f64>,
+    pub components: Vec<ComponentSolve>,
+    pub total_iterations: usize,
+}
+
+/// The induced subgraph of `ocean_mask == 1` cells.
+#[derive(Debug, Clone)]
+pub struct OceanGraph {
+    /// Number of ocean cells.
+    pub n: usize,
+    /// Local index -> global cell index (ascending).
+    pub cells: Vec<u32>,
+    /// Global cell index -> local index, or -1 off-ocean.
+    pub local_of: Vec<i64>,
+    /// CSR over local indices, ocean neighbours only (same relative order as `mesh.adj`).
+    pub offsets: Vec<u32>,
+    pub adj: Vec<u32>,
+    /// `edge_len / edge_dist` parallel to `adj` (the Part 1 flux coefficient, not yet divided by area).
+    pub coef: Vec<f64>,
+    /// Cell area (m^2) per local cell.
+    pub area: Vec<f64>,
+    /// Sum of `edge_len/edge_dist` over non-ocean neighbours (the Dirichlet psi = 0 diagonal term).
+    pub land_coef: Vec<f64>,
+    /// At least one land (non-ocean) neighbour. Walls/void edges do NOT count (they are not land).
+    pub coast_adjacent: Vec<bool>,
+    /// Component id per local cell (from `ocean_component`).
+    pub component: Vec<i64>,
+    /// Distinct component ids, ascending.
+    pub comp_ids: Vec<i64>,
+    /// Local cell indices of each component (ascending), parallel to `comp_ids`.
+    pub comp_cells: Vec<Vec<u32>>,
+    /// Position of each local cell inside its component's list.
+    comp_pos: Vec<u32>,
+}
+
+impl OceanGraph {
+    /// Build from an ocean flag per cell and the `ocean_component` ids (as returned by `ocean_cells`).
+    /// Errors if two adjacent ocean cells carry different component ids or an ocean cell has no id.
+    pub fn new(domain: &Domain, ocean: &[bool], component: &[i64]) -> Result<Self> {
+        let mesh = &domain.mesh;
+        let nc = mesh.n_cells;
+        if ocean.len() != nc || component.len() != nc {
+            return Err(Error::InvalidParam("OceanGraph: ocean/component length does not match the mesh".into()));
+        }
+        let mut local_of = vec![-1i64; nc];
+        let mut cells: Vec<u32> = Vec::new();
+        for i in 0..nc {
+            if ocean[i] {
+                if component[i] < 0 {
+                    return Err(Error::InvalidParam(format!("OceanGraph: ocean cell {i} has no component id")));
+                }
+                local_of[i] = cells.len() as i64;
+                cells.push(i as u32);
+            }
+        }
+        let n = cells.len();
+        let mut offsets = Vec::with_capacity(n + 1);
+        let mut adj: Vec<u32> = Vec::new();
+        let mut coef: Vec<f64> = Vec::new();
+        let mut area = Vec::with_capacity(n);
+        let mut land_coef = Vec::with_capacity(n);
+        let mut coast = Vec::with_capacity(n);
+        offsets.push(0u32);
+        for &g in &cells {
+            let g = g as usize;
+            let nbrs = mesh.neighbors(g);
+            let ls = mesh.edge_lens(g);
+            let ds = mesh.edge_dists(g);
+            let mut lc = 0.0;
+            let mut touches_land = false;
+            for q in 0..nbrs.len() {
+                let j = nbrs[q] as usize;
+                let c = ls[q] / ds[q];
+                if ocean[j] {
+                    if component[j] != component[g] {
+                        return Err(Error::InvalidParam(format!("OceanGraph: adjacent ocean cells {g} and {j} are in different components")));
+                    }
+                    adj.push(local_of[j] as u32);
+                    coef.push(c);
+                } else {
+                    lc += c;
+                    touches_land = true;
+                }
+            }
+            offsets.push(adj.len() as u32);
+            area.push(mesh.area[g]);
+            land_coef.push(lc);
+            coast.push(touches_land);
+        }
+        let comp_local: Vec<i64> = cells.iter().map(|&g| component[g as usize]).collect();
+        let mut comp_ids: Vec<i64> = comp_local.clone();
+        comp_ids.sort_unstable();
+        comp_ids.dedup();
+        let mut comp_cells: Vec<Vec<u32>> = vec![Vec::new(); comp_ids.len()];
+        let mut comp_pos = vec![0u32; n];
+        for (l, &c) in comp_local.iter().enumerate() {
+            let k = comp_ids.binary_search(&c).expect("id present");
+            comp_pos[l] = comp_cells[k].len() as u32;
+            comp_cells[k].push(l as u32);
+        }
+        Ok(OceanGraph { n, cells, local_of, offsets, adj, coef, area, land_coef, coast_adjacent: coast, component: comp_local, comp_ids, comp_cells, comp_pos })
+    }
+
+    /// Build from the fields written by `ocean_mask` (`ocean_mask`, `ocean_component`).
+    pub fn from_fields(domain: &Domain, fields: &FieldStore) -> Result<Self> {
+        let m = fields.data("ocean_mask")?;
+        let c = fields.data("ocean_component")?;
+        let ocean: Vec<bool> = m.iter().map(|&v| v > 0.5).collect();
+        let comp: Vec<i64> = c.iter().map(|&v| v.round() as i64).collect();
+        Self::new(domain, &ocean, &comp)
+    }
+
+    pub fn n_components(&self) -> usize { self.comp_ids.len() }
+
+    /// Local neighbours of local cell `i`.
+    pub fn neighbors(&self, i: usize) -> &[u32] { &self.adj[self.offsets[i] as usize..self.offsets[i + 1] as usize] }
+
+    /// Operator weight `w_ik` for the `q`-th ocean neighbour of local cell `i`.
+    pub fn weight(&self, i: usize, q: usize) -> f64 { self.coef[self.offsets[i] as usize + q] / self.area[i] }
+
+    /// `L psi` on local vectors (Dirichlet psi = 0 on land neighbours).
+    pub fn apply_l(&self, x: &[f64]) -> Vec<f64> {
+        assert_eq!(x.len(), self.n, "apply_l: length mismatch");
+        let mut out = vec![0.0; self.n];
+        for i in 0..self.n {
+            let (a, b) = (self.offsets[i] as usize, self.offsets[i + 1] as usize);
+            let mut s = 0.0;
+            for q in a..b {
+                s += self.coef[q] * (x[self.adj[q] as usize] - x[i]);
+            }
+            s -= self.land_coef[i] * x[i];
+            out[i] = s / self.area[i];
+        }
+        out
+    }
+
+    /// `(-L + sigma I) x`.
+    pub fn apply_shifted(&self, sigma: f64, x: &[f64]) -> Vec<f64> {
+        let l = self.apply_l(x);
+        (0..self.n).map(|i| sigma * x[i] - l[i]).collect()
+    }
+
+    /// Area-weighted inner product `sum_i area_i x_i y_i` (the inner product in which `L` is symmetric).
+    pub fn dot_area(&self, x: &[f64], y: &[f64]) -> f64 {
+        (0..self.n).map(|i| self.area[i] * x[i] * y[i]).sum()
+    }
+
+    /// Scatter a local vector to a global one (0 off-ocean).
+    pub fn to_global(&self, local: &[f64]) -> Vec<f64> {
+        let mut g = vec![0.0; self.local_of.len()];
+        for (l, &c) in self.cells.iter().enumerate() {
+            g[c as usize] = local[l];
+        }
+        g
+    }
+
+    /// Gather the ocean cells of a global vector.
+    pub fn to_local(&self, global: &[f64]) -> Vec<f64> {
+        self.cells.iter().map(|&c| global[c as usize]).collect()
+    }
+
+    /// Split a local right-hand side per component, in `comp_ids` order and ascending local index inside each.
+    /// An empty ocean gives an empty list; a one-cell component gives a one-element vector.
+    pub fn split_by_component(&self, b: &[f64]) -> Vec<Vec<f64>> {
+        assert_eq!(b.len(), self.n, "split_by_component: length mismatch");
+        self.comp_cells.iter().map(|cells| cells.iter().map(|&l| b[l as usize]).collect()).collect()
+    }
+
+    /// Inverse of `split_by_component`.
+    pub fn merge_by_component(&self, parts: &[Vec<f64>]) -> Vec<f64> {
+        let mut out = vec![0.0; self.n];
+        for (cells, p) in self.comp_cells.iter().zip(parts) {
+            for (&l, &v) in cells.iter().zip(p) {
+                out[l as usize] = v;
+            }
+        }
+        out
+    }
+
+    /// Solve `(-L + sigma I) psi = b` (local vectors), one CG per component. `sigma >= 0`.
+    /// Returns `Error::NoConvergence` if any component exceeds `cfg.max_iters`.
+    pub fn solve(&self, sigma: f64, b: &[f64], cfg: &CgConfig) -> Result<OceanSolution> {
+        if !sigma.is_finite() || sigma < 0.0 {
+            return Err(Error::InvalidParam("ocean solve: sigma must be finite and >= 0".into()));
+        }
+        if !(cfg.tol > 0.0) || !cfg.tol.is_finite() {
+            return Err(Error::InvalidParam("ocean solve: tol must be > 0".into()));
+        }
+        if b.len() != self.n {
+            return Err(Error::InvalidParam(format!("ocean solve: rhs length {} != {} ocean cells", b.len(), self.n)));
+        }
+        if b.iter().any(|v| !v.is_finite()) {
+            return Err(Error::NonFinite("ocean solve rhs".into()));
+        }
+        let parts = self.split_by_component(b);
+        let mut sols: Vec<Vec<f64>> = Vec::with_capacity(parts.len());
+        let mut reports = Vec::with_capacity(parts.len());
+        let mut total = 0usize;
+        for (k, rhs) in parts.iter().enumerate() {
+            let (x, rep) = self.solve_component(k, sigma, rhs, cfg)?;
+            total += rep.iterations;
+            sols.push(x);
+            reports.push(rep);
+        }
+        Ok(OceanSolution { psi: self.merge_by_component(&sols), components: reports, total_iterations: total })
+    }
+
+    /// `K x` for the symmetrised system on component `k` (component-local vectors).
+    fn k_mul(&self, cells: &[u32], sigma: f64, x: &[f64], out: &mut [f64]) {
+        for (p, &l) in cells.iter().enumerate() {
+            let i = l as usize;
+            let (a, b) = (self.offsets[i] as usize, self.offsets[i + 1] as usize);
+            let mut s = (self.land_coef[i] + sigma * self.area[i]) * x[p];
+            for q in a..b {
+                s += self.coef[q] * (x[p] - x[self.comp_pos[self.adj[q] as usize] as usize]);
+            }
+            out[p] = s;
+        }
+    }
+
+    fn solve_component(&self, k: usize, sigma: f64, b: &[f64], cfg: &CgConfig) -> Result<(Vec<f64>, ComponentSolve)> {
+        let cells = &self.comp_cells[k];
+        let m = cells.len();
+        let id = self.comp_ids[k];
+        let singular = sigma == 0.0 && !cells.iter().any(|&l| self.coast_adjacent[l as usize]);
+        let area: Vec<f64> = cells.iter().map(|&l| self.area[l as usize]).collect();
+        // Symmetrised right-hand side A b (mean removed first when the operator is singular).
+        let mut rhs: Vec<f64> = (0..m).map(|p| area[p] * b[p]).collect();
+        if singular {
+            let sa: f64 = area.iter().sum();
+            let mean_b = rhs.iter().sum::<f64>() / sa; // area-weighted mean of b
+            for p in 0..m {
+                rhs[p] -= area[p] * mean_b;
+            }
+        }
+        let bnorm = rhs.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let mut rep = ComponentSolve { id, n_cells: m, iterations: 0, rel_residual: 0.0, singular };
+        if bnorm == 0.0 {
+            return Ok((vec![0.0; m], rep));
+        }
+        // Jacobi preconditioner: 1 / diag(K).
+        let dinv: Vec<f64> = cells
+            .iter()
+            .map(|&l| {
+                let i = l as usize;
+                let (a, b2) = (self.offsets[i] as usize, self.offsets[i + 1] as usize);
+                let d = self.coef[a..b2].iter().sum::<f64>() + self.land_coef[i] + sigma * self.area[i];
+                1.0 / d
+            })
+            .collect();
+        let mut x = vec![0.0; m];
+        let mut r = rhs.clone();
+        let mut z: Vec<f64> = (0..m).map(|p| dinv[p] * r[p]).collect();
+        let mut pdir = z.clone();
+        let mut rz: f64 = (0..m).map(|p| r[p] * z[p]).sum();
+        let mut kp = vec![0.0; m];
+        let mut rel = 1.0;
+        let mut it = 0usize;
+        while rel > cfg.tol {
+            if it >= cfg.max_iters {
+                return Err(Error::NoConvergence { solver: "ocean_pcg".into(), iterations: it, residual: rel });
+            }
+            self.k_mul(cells, sigma, &pdir, &mut kp);
+            let pkp: f64 = (0..m).map(|p| pdir[p] * kp[p]).sum();
+            if !(pkp > 0.0) || !pkp.is_finite() {
+                return Err(Error::NoConvergence { solver: "ocean_pcg (non-positive curvature)".into(), iterations: it, residual: rel });
+            }
+            let alpha = rz / pkp;
+            for p in 0..m {
+                x[p] += alpha * pdir[p];
+                r[p] -= alpha * kp[p];
+            }
+            it += 1;
+            rel = r.iter().map(|v| v * v).sum::<f64>().sqrt() / bnorm;
+            for p in 0..m {
+                z[p] = dinv[p] * r[p];
+            }
+            let rz_new: f64 = (0..m).map(|p| r[p] * z[p]).sum();
+            let beta = rz_new / rz;
+            rz = rz_new;
+            for p in 0..m {
+                pdir[p] = z[p] + beta * pdir[p];
+            }
+        }
+        if singular {
+            let sa: f64 = area.iter().sum();
+            let mean = (0..m).map(|p| area[p] * x[p]).sum::<f64>() / sa;
+            for v in x.iter_mut() {
+                *v -= mean;
+            }
+        }
+        rep.iterations = it;
+        rep.rel_residual = rel;
+        Ok((x, rep))
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------------------------
 

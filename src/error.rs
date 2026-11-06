@@ -16,6 +16,8 @@ pub enum Error {
     GroupState(String),
     /// No usable GPU adapter (or the `gpu` feature is not compiled in).
     NoGpu(String),
+    /// An iterative solver hit its iteration guard before reaching tolerance (Part 4a-2a).
+    NoConvergence { solver: String, iterations: usize, residual: f64 },
     HistoryTruncated { requested: u64, oldest_available: u64 },
 }
 
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             NonFinite(s) => write!(f, "non-finite value in field '{s}'"),
             GroupState(s) => write!(f, "edit group error: {s}"),
             NoGpu(s) => write!(f, "no GPU available: {s}"),
+            NoConvergence { solver, iterations, residual } => write!(f, "{solver}: no convergence after {iterations} iterations (relative residual {residual:.3e})"),
             HistoryTruncated { requested, oldest_available } => {
                 write!(f, "history truncated: asked for version {requested}, oldest available is {oldest_available}")
             }

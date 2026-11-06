@@ -1,6 +1,6 @@
 //! enbuilder: physics-driven world generator core.
 //! Part 1 = foundations (domain, meshes, fields, scheduler); Part 2 = terrain and energy (stages A, B);
-//! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 4a-1 = sea level, ocean mask, wind stress; Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`).
+//! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 4a-1 = sea level, ocean mask, wind stress; Part 4a-2b = wind-stress curl and beta; Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`).
 pub mod backend;
 pub mod budget;
 pub mod consts;
@@ -19,6 +19,7 @@ pub mod module;
 pub mod moisture;
 pub mod noise;
 pub mod ocean;
+pub mod ocean_forcing;
 pub mod precipitation;
 pub mod projection;
 pub mod pressure;
@@ -51,4 +52,5 @@ pub use wind::DiagnosticWind;
 pub use wind_stepped::{add_atmosphere_stage_stepped, add_atmosphere_stage_stepped_with, Backend, SteppedWind};
 pub use transport::{add_moisture_precip_stage, add_moisture_transport_stage, MoistureTransport};
 pub use moisture::{add_moisture_source_stage, saturation_vapour_pressure, MoistureSource};
-pub use ocean::{add_ocean_mask_stage, add_ocean_stage, OceanMask, SeaLevel, WindStress};
+pub use ocean::{add_ocean_mask_stage, add_ocean_stage, CgConfig, ComponentSolve, OceanGraph, OceanMask, OceanSolution, SeaLevel, WindStress};
+pub use ocean_forcing::{add_gyre_forcing_stage, beta_of, curl_of, curl_of_masked, unpack_vec3, BetaTerm, CurlOp, WindStressCurl};

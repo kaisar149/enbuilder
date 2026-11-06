@@ -1,4 +1,6 @@
-# ARCHITECTURE.md (after PART 4a-1: ocean mask, shared sea level, wind stress; NOT compiled or run, see "Part 4a-1")
+# ARCHITECTURE.md (after PART 4a-2b: wind-stress curl and beta; NOT compiled, see "Part 4a-2b" verification status)
+
+**Part 4a-2a (latest session, VERIFIED)** adds `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` to `ocean.rs`, `Error::NoConvergence`, `tests/part4a2a.rs` (11 tests). This session had a Rust toolchain (cargo 1.97, offline, `gpu` feature stripped from `Cargo.toml` only for the sandbox build; the delivered `Cargo.toml` is unchanged). **Whole crate: all suites pass, zero warnings** (this also confirms `part4a1` (12/12; the lake-fixture fix works) and `part3c5` (7) compile and pass; the 3c-5 *benchmark* tables remain PENDING because no benchmark was run). No physics added; nothing in the pipeline reads `OceanGraph` yet.
 
 Crate: `enbuilder` (Rust edition 2024, std only, no dependencies). Part 1 compiled and passed its tests (reported by the project owner). Parts 2 and 3a are **written but not yet compiled** (no Rust toolchain in the build sandbox; see "Verification status").
 
@@ -38,7 +40,7 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `wind.rs` | `DiagnosticWind` (+ shared `pub(crate)` helpers) |
 | `backend.rs` | `ComputeBackend`, `Cpu`, `CpuF32`, `BackendKind`, `make_backend`, `PackedMesh`, `laplacian_f64`, `laplacian_f32_emulated`, `to_f32/to_f64`, `max_rel_error` |
 | `gpu/mod.rs` (feature `gpu`) | `GpuContext`, `GpuLaplacian`, `Gpu`, `LAPLACIAN_WGSL` |
-| `ocean.rs` | `SeaLevel`, `OceanMask`, `WindStress`, `add_ocean_mask_stage`, `add_ocean_stage`, pure fns `label_components`, `ocean_cells`, `coast_distance`, `stress_vector` (Part 4a-1) |
+| `ocean.rs` | `SeaLevel`, `OceanMask`, `WindStress`, `add_ocean_mask_stage`, `add_ocean_stage`, pure fns `label_components`, `ocean_cells`, `coast_distance`, `stress_vector` (Part 4a-1); `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` (Part 4a-2a) |
 | `projection.rs` | `ProjConfig`, `ProjResult`, emulated kernels `k_flux_div/k_dot/k_matvec/k_flux_correct`, `project_f32_emulated`, `divergence_residual_f64`, `correct_f64`; feature `gpu`: WGSL sources + `project_gpu` |
 | `wind_gpu.rs` | `StepStatic`, `StepConfig`, `StepResult`, packing, emulated kernels `k_pressure_gradient/k_momentum_step/k_residual_reduce`, `solve_f32_emulated`; feature `gpu`: WGSL sources + `solve_gpu` |
 | `wind_stepped.rs` | `SteppedWind`, `add_atmosphere_stage_stepped(&mut Scheduler)` |
@@ -54,7 +56,10 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part3b1.rs` | Part 3b-1 acceptance tests (7) |
 | `tests/part3b2.rs` | Part 3b-2 acceptance tests (10) |
 | `tests/part3b3.rs` | Part 3b-3 acceptance tests (8) |
-| `tests/part4a1.rs` | Part 4a-1: ocean mask, coast distance, wind stress (12 tests, UNRUN) |
+| `tests/part4a1.rs` | Part 4a-1: ocean mask, coast distance, wind stress (12 tests, pass) |
+| `tests/part4a2a.rs` | Part 4a-2a: ocean operator and CG on synthetic problems (11 tests, pass) |
+| `ocean_forcing.rs` | `CurlOp`, `curl_of`, `curl_of_masked`, `beta_of`, `unpack_vec3`, `WindStressCurl`, `BetaTerm`, `add_gyre_forcing_stage` (Part 4a-2b, not compiled) |
+| `tests/part4a2b.rs` | Part 4a-2b: curl and beta analytic tests (10 tests, not run) |
 | `tests/part3c4.rs` | Part 3c-4: f32 projection vs CPU f64 |
 | `tests/part3c3.rs` | Part 3c-3: f32 kernels vs CPU f64 stepped wind |
 | `tests/part3c2.rs` | Part 3c-2a: 5 always-on tests + 2 `gpu` tests (skip without adapter) |
@@ -481,6 +486,104 @@ No Rust toolchain, no network: **not compiled, tests not run**. Only a delimiter
 ### Hand-off to 4a-2
 Read `ocean_mask`, `depth`, `coast_distance`, `wind_stress`, `sea_level`. Ocean components are independent basins for gyres. Open: migrate other modules to the shared `sea_level` field.
 
+## Part 4a-2a: ocean subgraph, Dirichlet operator, linear solver (no physics)
+
+**API** (all in `ocean.rs`, re-exported from the crate root)
+```rust
+pub struct CgConfig { pub tol: f64 /*1e-10, relative*/, pub max_iters: usize /*20_000*/ }
+pub struct OceanGraph {
+    pub n: usize,                    // ocean cells
+    pub cells: Vec<u32>,             // local -> global (ascending)
+    pub local_of: Vec<i64>,          // global -> local, -1 off-ocean
+    pub offsets: Vec<u32>, pub adj: Vec<u32>,   // CSR over local indices, ocean neighbours only
+    pub coef: Vec<f64>,              // edge_len/edge_dist parallel to adj
+    pub area: Vec<f64>,              // per local cell
+    pub land_coef: Vec<f64>,         // sum of edge_len/edge_dist over NON-ocean neighbours (Dirichlet diagonal)
+    pub coast_adjacent: Vec<bool>,   // >= 1 land neighbour (wall/void edges do NOT count)
+    pub component: Vec<i64>, pub comp_ids: Vec<i64>, pub comp_cells: Vec<Vec<u32>>, // from ocean_component
+}
+OceanGraph::new(&Domain, ocean:&[bool], component:&[i64]) -> Result<Self>   // errors if adjacent ocean cells differ in component
+OceanGraph::from_fields(&Domain, &FieldStore) -> Result<Self>                // reads ocean_mask, ocean_component
+.n_components() .neighbors(i) .weight(i,q) // w_ik = coef/area_i
+.apply_l(&[f64]) -> Vec<f64>                 // L psi
+.apply_shifted(sigma,&[f64]) -> Vec<f64>     // (-L + sigma I) psi
+.dot_area(x,y)                               // sum area_i x_i y_i
+.to_global(&local) / .to_local(&global)      // global off-ocean = 0
+.split_by_component(&b) / .merge_by_component(&parts)   // rhs helper; empty ocean -> [], one cell -> [[b0]]
+.solve(sigma, &b_local, &CgConfig) -> Result<OceanSolution{ psi (local), components: Vec<ComponentSolve{id,n_cells,iterations,rel_residual,singular}>, total_iterations }>
+```
+`Error::NoConvergence { solver, iterations, residual }` is new (iteration guard hit, or non-positive curvature).
+
+**Operator:** `(L psi)_i = sum_k w_ik (psi_k - psi_i)`, `w_ik = (edge_len/edge_dist)_k / area_i`, over all mesh neighbours; a land neighbour has `psi = 0`, so it adds `w_ik (0 - psi_i)`. The solver sees `(-L + sigma I) psi = b`, `sigma >= 0`.
+
+### Decisions (4a-2a)
+- **Symmetry is area-weighted (deviation from the PART text).** Because of the `/area_i`, `L = -A^-1 C` with `C` symmetric, so `<x, Ly> = <Lx, y>` holds for `<x,y>_A = sum area_i x_i y_i`, not the plain dot product, unless all areas are equal (true on the plane, and tested there in both forms). On sphere and cube (areas differ) the plain-dot form is NOT symmetric; tests check the area-weighted form to 1e-12.
+- **Solver runs on the Euclidean-SPD equivalent** `(C + sigma A) psi = A b` (same solution), Jacobi preconditioner = its diagonal. Stopping rule: `||r|| <= tol ||A b||` in 2-norm of that system, start from `psi = 0` (deterministic, bit-identical on repeat). Own PCG, no reuse of the energy CG types.
+- **All coasts share `psi = 0`; islands carry no separate circulation** (acknowledged limit, as specified).
+- **Per-component solves:** one independent CG per `ocean_component` id; a component's result is bit-identical to solving that ocean alone, and changing the rhs in one ocean leaves the others unchanged (tested).
+- **Walls/void/wrap edges carry no operator term** (zero flux, natural boundary), consistent with Part 1. A wall is not `coast_adjacent`. This differs from 4a-1's `coast_distance`, which counts a wall as a coast. **Open for 4a-2b:** physically a wall should also pin `psi` (no through-flow); if wanted, add a Dirichlet term `boundary_len / (0.5 sqrt(area))` and a flag.
+- **Singular components handled instead of erroring:** a component with no `coast_adjacent` cell and `sigma == 0` (all-ocean sphere, wrapped plane) has a constant null space. The rhs gets its area-weighted mean removed and the solution is normalised to area-weighted mean zero; `ComponentSolve.singular = true`. With `sigma > 0` it is an ordinary SPD solve.
+- Zero rhs returns zero with 0 iterations; empty ocean returns empty `OceanSolution`; invalid `sigma`/`tol`/lengths give `InvalidParam`, NaN rhs gives `NonFinite`.
+
+### Measured (tests/part4a2a.rs; default tol 1e-10)
+| problem | sigma | iterations | max error / max abs(psi_true) |
+|---|---|---|---|
+| plane 64x64, land border (62x62 ocean) | 0 / 1e-12 / 1e-10 | 203 / 203 / 173 | 8.5e-10 / 7.9e-10 / 9.4e-10 |
+| sphere level 4, land cap (z > 0.6 R) | 0 / 1e-12 | 163 / 58 | 3.1e-10 / 1.6e-10 |
+| cube 14/edge, one land face | 0 / 1e-12 | 127 / 69 | 1.2e-10 / 1.2e-10 |
+Requirement was 1e-8 (about 10x margin). The manufactured solution is smooth + 20% white noise. Note `sigma = 1e-12` is tiny against the Laplacian's smallest eigenvalue scale only because `w` has units 1/m^2 (about 1e-8 per cell); choose `sigma` in those units when 4a-2b adds Rayleigh friction.
+
+### Tests (11): manufactured plane/sphere/cube; symmetry (area-weighted all three, plain on plane) + negative semi-definite + `-L+sigma I` positive; Dirichlet term on a one-cell ocean; two disjoint oceans (joint == alone, bit-identical, rhs-independence); empty and one-cell ocean; `coast_adjacent` against an independent check on three topologies; coastless singular case; iteration count, determinism, `NoConvergence` at `max_iters = 3`, bad-input errors; `from_fields` through the real `ocean_mask` stage and the split/merge/global/local round trips.
+
+### Hand-off to 4a-2b
+Build `OceanGraph::from_fields` after `ocean_mask`; right-hand side = curl of `wind_stress` (local vector, per cell); call `solve(sigma, &b, &CgConfig::default())`; `to_global` for a `psi` field. Decide the wall question above and the units of `sigma` (Rayleigh/Stommel friction). Nothing is wired into the scheduler yet.
+
+## Part 4a-2b: wind-stress curl and beta term (no solver, no physics beyond two diagnostics)
+
+**API** (`src/ocean_forcing.rs`, re-exported from the crate root)
+```rust
+pub struct CurlOp { /* coef: Vec<Vec3> parallel to mesh.adj */ }
+CurlOp::new(&Domain) -> CurlOp
+.coef() -> &[Vec3]
+.apply(&Domain, &[Vec3]) -> Vec<f64>                          // curl_i = sum_k coef_k . (v_j - v_i), all neighbours
+.apply_masked(&Domain, &[Vec3], ocean:&[bool]) -> Vec<f64>    // non-ocean neighbours contribute nothing; non-ocean cells = 0
+curl_of(&Domain, &[Vec3]) -> Vec<f64>
+curl_of_masked(&Domain, &[Vec3], &[bool]) -> Vec<f64>
+beta_of(&Domain, coriolis_f:&[f64]) -> Vec<f64>                // grad(f) . north via GradientOp
+unpack_vec3(&[f64]) -> Vec<Vec3>                               // 3-layer field -> vectors
+WindStressCurl  (module "wind_stress_curl": wind_stress, ocean_mask -> stress_curl, N/m^3, 0 off-ocean)
+BetaTerm        (module "beta_term": coriolis_f -> beta, 1/(m s), every cell)
+add_gyre_forcing_stage(&mut Scheduler)                         // registers both; no parameters
+```
+Fields: `stress_curl` (1 layer, ocean cells, 0 on land and lakes), `beta` (1 layer). No new parameters; `set_param` returns `InvalidParam`.
+
+### Decisions (4a-2b)
+- **Curl = discrete Stokes circulation** `curl_i = (1/area_i) sum_k tau_edge . t_ik len_ik`, `t_ik = up_i x n_ik`, `n_ik` = unit direction from centroid i to j projected into i's tangent plane (negated for wrapped edges, same test as `GradientOp`). No east/north component of the stress is differentiated.
+- **Evaluated relative to the cell's own value:** `tau_edge = tau_i + (h/d)(tau_j - tau_i)`; the `tau_i` term is the circulation of a constant over a closed loop (0) and is dropped. A uniform field therefore gives exactly 0 on every cell and topology (tested bitwise to 1e-30), independent of cell shape.
+- **Land / lake / wall rule (as specified):** the cell's own value is used across such an edge, which means *no term*. Wall/void edges are not in the adjacency, so they also carry no term. Values stored on non-ocean cells are never read (tested with 1e9 garbage).
+- **Deviation 1, edge geometry from area closure.** The mesh has no centroid-to-edge distance `h`. Measured with the naive `h = d/2` (weights `len t /(2 area)`), solid-body curl was 12% off on the hex-pent sphere at all levels (cells are not Voronoi). Now `h_ik = (s_i/2) d_ik`, `s_i = 4 area_i / sum(len d)`; weights `2 len t / sum(len d)`. Solid-body error fell to 0.9% (L3), 0.4% (L4), 0.2% (L5).
+- **Deviation 2, first-order consistency correction.** Even then `curl(grad phi)` did not shrink (14%, 18%, 20% at L3-5, measured in a numpy mirror) because the stencil is not exact for linear fields on distorted cells. A minimal weighted-norm correction (the same 2x2 least squares as `GradientOp`, weight `1/d^2`, eps `1e-10`) makes the stencil exact for every linear tangent field. Regular cells (square grid, regular hexagon) get a correction of exactly 0. Mirror result: `max|curl grad phi| / (|grad phi|/R)` = 1.7e-2, 9.0e-3, 4.6e-3 at L3, L4, L5 (halves per level). Boundary cells with missing wall edges are also exact for linear fields (3-neighbour and corner cells, tested to 1e-6 on the plane).
+- **Deviation 3, PART text typo.** Rotation about the polar axis has radial vorticity `2 omega sin(lat)` = `2 omega (axis . up)`, not `2 omega cos(lat)` (that is the colatitude form). Tests use `axis . up`.
+- **Masked curl near land is first-order inconsistent by design** (the zero-gradient rule discards the land edge and the weights are not re-corrected). That is the recorded boundary behaviour, not a bug.
+- **Beta** = `grad(f) . north_i`, `GradientOp` on the scalar `coriolis_f`. Does not need the spin axis or latitude; works with `coriolis_const` (f-plane gives exactly 0) and with a linear-in-position `f` on a plane (beta recovered to 2e-6 relative: `GradientOp`'s `eps = 1e-6 (sxx+syy)` regularisation shrinks every gradient by about 2e-6; test tolerance 1e-5). At a pole cell `north` is an arbitrary tangent (Part 1 rule), so beta there is meaningless but finite.
+- Orientation independence is tested by rotating the whole icosahedral mesh (centroids and up) by 0.7 rad about (1,2,3) while keeping the spin axis fixed; frames are rebuilt by `Domain::new`.
+
+### Numpy mirror results (a stand-in for running the tests; `/reference` style, same geometry as `generate_sphere`)
+| quantity | L3 | L4 | L5 |
+|---|---|---|---|
+| solid-body curl, max err / (2 omega) | 8.7e-3 | 4.3e-3 | 2.1e-3 |
+| curl of grad phi, max / (grad scale) | 1.7e-2 | 9.0e-3 | 4.6e-3 |
+| beta, max rel err (abs lat < 60) | 2.2e-2 | 1.2e-2 | 6.0e-3 |
+Rotated mesh: solid-body 9.0e-3 / 4.5e-3 / 2.2e-3; curl grad 1.7e-2 / 9.1e-3 / 4.7e-3; beta 3.2e-2 / 1.5e-2 / 7.4e-3. Plane (40x30 wall), all cells including walls and corners: 2.5e-11.
+
+### Tests (`tests/part4a2b.rs`, 10): plane solid-body (wall and void, interior and wall cells, 1e-6); sphere solid-body `2 omega sin(lat)` (L3, L4, shrinking, < 2%); curl of gradient L3-L5 shrinking (< 0.7x per level, < 1% at L5); uniform field exactly 0 on sphere, cube, walled and wrapped plane, plus finiteness; masked rule (garbage on land, hand-summed stencil next to land); beta on the sphere (< 5%, positive); beta orientation independence (per 10-degree band means within 2%); f-plane = 0 and beta-plane within 1e-5; modules write fields, land curl is exactly 0, results equal the pure functions; module input errors.
+
+### Verification status (4a-2b)
+**Not compiled, tests not run** (no Rust toolchain and no network in this session; cargo is absent). Only a delimiter-balance check plus the numpy mirrors above. The test tolerances were chosen from the mirror with at least 2x margin. Please run `cargo test --test part4a2b` and then `cargo test`; expect small compile slips.
+
+### Hand-off to 4a-2c
+RHS of the gyre equation = `stress_curl / (rho_ocean * H)` (units 1/s^2 after dividing by density and depth; `depth` field exists). The Stommel/Munk equation `beta d(psi)/dx = curl(tau)/(rho H) - r lap(psi)` needs a *directional* beta term (`beta` is a scalar along local north; the advective term is `beta * (north . grad psi)` rotated by 90 degrees), which is not symmetric, so CG will not apply directly to it; decide between a Rayleigh-friction-only streamfunction (`-L + sigma I` with `b = curl/(rho H)`, solvable now with 4a-2a) and a non-symmetric solver (BiCGSTAB or GMRES). Still open: the wall Dirichlet question from 4a-2a.
+
 ## Parameters from Part 1
 
 Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, boundary, surface_gravity, seed. Test modules: `diffusivity`, `steps`, `target`, `gain`, `value`. No physical field names are reserved yet.
@@ -519,4 +622,4 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 - Part 3a compiled and its 10 tests pass. Static check: balanced delimiters in `gradient.rs`, `pressure.rs`, `wind.rs`, `tests/part3.rs`. Expect to fix small type/borrow errors on first `cargo test`; please send the compiler output back.
 - Part 3a numerics validated in NumPy: `reference/wind_mirror.py` + `reference/run_wind.py` mirror `gradient.rs`, `pressure.rs`, `wind.rs` formula for formula; test thresholds in `tests/part3.rs` were set from that mirror with wide margins (band counts 0/3/9, zonal winds, tidal flow, barrier slowdown ~0.77x). Not validated: Rust compilation, exact Rust numbers on the cube and wrapped plane (smoke test only checks finiteness, `<= max_wind`, determinism).
 - Parts 1-3b and 3c-1 all compiled and pass in the sandbox (cargo 1.97, offline; 82 tests total, no warnings). Water conservation including rain is tested in 3b-3 and 3b-4.
-- Part 3c-5: written without a Rust toolchain; **not compiled, tests not run, benchmarks not run**. Static check only (balanced delimiters). Please run `cargo test` (expect 98 existing + 6 new tests, zero warnings) and the examples, then fill in the PENDING tables.
+- Part 4a-1 and 3c-5 (later compiled in the 4a-2a session): `cargo test` passes everything, zero warnings; the 3c-5 benchmark/GPU numbers are still PENDING. Original note: Part 3c-5 was written without a Rust toolchain; **not compiled, tests not run, benchmarks not run**. Static check only (balanced delimiters). Please run `cargo test` (expect 98 existing + 6 new tests, zero warnings) and the examples, then fill in the PENDING tables.
