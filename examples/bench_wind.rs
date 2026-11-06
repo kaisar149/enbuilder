@@ -35,7 +35,7 @@ fn main() {
         let v: Vec<u32> = std::env::args().skip(1).filter_map(|a| a.parse().ok()).collect();
         if v.is_empty() { vec![5, 6, 7] } else { v }
     };
-    let mut backends = vec![("cpu-f64", Backend::Cpu), ("cpu-f32-emul", Backend::CpuF32)];
+    let backends = vec![("cpu-f64", Backend::Cpu), ("cpu-f32-emul", Backend::CpuF32)];
     #[cfg(feature = "gpu")]
     backends.push(("gpu", Backend::Gpu));
     println!("{:>5} {:>8} {:<13} {:<7} {:>9} {:>9} {:>10} {:>7} {:>7} {:>10} {:>10}",

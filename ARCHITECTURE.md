@@ -1,4 +1,4 @@
-# ARCHITECTURE.md (after PART 3c-5: backend switch and Part 3 close-out; NOT compiled or run this session, see "Part 3c")
+# ARCHITECTURE.md (after PART 4a-1: ocean mask, shared sea level, wind stress; NOT compiled or run, see "Part 4a-1")
 
 Crate: `enbuilder` (Rust edition 2024, std only, no dependencies). Part 1 compiled and passed its tests (reported by the project owner). Parts 2 and 3a are **written but not yet compiled** (no Rust toolchain in the build sandbox; see "Verification status").
 
@@ -38,6 +38,7 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `wind.rs` | `DiagnosticWind` (+ shared `pub(crate)` helpers) |
 | `backend.rs` | `ComputeBackend`, `Cpu`, `CpuF32`, `BackendKind`, `make_backend`, `PackedMesh`, `laplacian_f64`, `laplacian_f32_emulated`, `to_f32/to_f64`, `max_rel_error` |
 | `gpu/mod.rs` (feature `gpu`) | `GpuContext`, `GpuLaplacian`, `Gpu`, `LAPLACIAN_WGSL` |
+| `ocean.rs` | `SeaLevel`, `OceanMask`, `WindStress`, `add_ocean_mask_stage`, `add_ocean_stage`, pure fns `label_components`, `ocean_cells`, `coast_distance`, `stress_vector` (Part 4a-1) |
 | `projection.rs` | `ProjConfig`, `ProjResult`, emulated kernels `k_flux_div/k_dot/k_matvec/k_flux_correct`, `project_f32_emulated`, `divergence_residual_f64`, `correct_f64`; feature `gpu`: WGSL sources + `project_gpu` |
 | `wind_gpu.rs` | `StepStatic`, `StepConfig`, `StepResult`, packing, emulated kernels `k_pressure_gradient/k_momentum_step/k_residual_reduce`, `solve_f32_emulated`; feature `gpu`: WGSL sources + `solve_gpu` |
 | `wind_stepped.rs` | `SteppedWind`, `add_atmosphere_stage_stepped(&mut Scheduler)` |
@@ -53,6 +54,7 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part3b1.rs` | Part 3b-1 acceptance tests (7) |
 | `tests/part3b2.rs` | Part 3b-2 acceptance tests (10) |
 | `tests/part3b3.rs` | Part 3b-3 acceptance tests (8) |
+| `tests/part4a1.rs` | Part 4a-1: ocean mask, coast distance, wind stress (12 tests, UNRUN) |
 | `tests/part3c4.rs` | Part 3c-4: f32 projection vs CPU f64 |
 | `tests/part3c3.rs` | Part 3c-3: f32 kernels vs CPU f64 stepped wind |
 | `tests/part3c2.rs` | Part 3c-2a: 5 always-on tests + 2 `gpu` tests (skip without adapter) |
@@ -451,6 +453,34 @@ Acceptance rule for the table: GPU must beat CPU f64 at level 6 or 7; if not, re
 
 Part 3 is functionally closed once the PENDING items above are confirmed on real hardware; Part 4 (ocean and hydrology) can start from the CPU path, which does not depend on them.
 
+## Part 4a-1: ocean mask, shared sea level, wind stress (UNVERIFIED: written without a Rust toolchain)
+
+Wiring: `add_ocean_mask_stage(&mut s)` registers `sea_level` + `ocean_mask` (needs only `elevation`, works with no atmosphere); `add_ocean_stage(&mut s)` adds `wind_stress` (needs `wind`, `ice_fraction`, so register it with the atmosphere stage and the ice-albedo loop). The scheduler orders `sea_level -> ocean_mask -> wind_stress`. Nothing feeds back yet.
+
+| Module | Inputs | Outputs | Parameters (default) |
+|---|---|---|---|
+| `sea_level` | none | `sea_level` (m, per cell) | sea_level 0 |
+| `ocean_mask` | `elevation`, `sea_level` | `ocean_mask` (0/1), `ocean_component` (id from 0, -1 off-ocean), `coast_distance` (m), `depth` (m, >= 0, 0 off-ocean) | min_ocean_area_m2 0 (auto = 1% of total area) |
+| `wind_stress` | `wind`, `ocean_mask`, `ice_fraction` | `wind_stress` (3 layers, world-space tangent vector, N/m^2) | rho_air 1.2, cd_stress 1.3e-3 |
+
+### Decisions (4a-1)
+- **Shared sea level (resolves open decision 0 for the ocean stage):** one module `sea_level` writes the per-cell field `sea_level`. Per cell, not a scalar, so a later sea-level anomaly can edit it locally. Ocean reads it. **Not yet migrated:** `albedo`, `energy_balance`, `pressure`, `wind`, `moisture_source`, `precipitation` still carry their own `sea_level` parameter (default 0). Until they read the field, changing the shared level will not move their ocean/land decision. Migration (add `sea_level` input, drop the param) is a small separate task I left alone because those modules are compiled and tested and I could not recompile.
+- **Below sea level** = `elevation < sea_level` (strict).
+- **Ocean vs lake:** connected component (mesh adjacency) of below-sea-level cells with area >= `min_ocean_area_m2` is ocean; smaller is a lake (4b owns lakes; no lake field written here). Ids are ordered by lowest cell index, dense from 0.
+- **Coast:** ocean cell touching a non-ocean cell, or a wall edge (`boundary_len > 0` on `Wall`/`Closed`). Void edges are not coasts. Wrap has no edge.
+- **coast_distance:** multi-source Dijkstra through ocean cells only, weight `edge_dist`; 0 on coast and on non-ocean cells; a coastless ocean (all-ocean sphere, wrapped plane) gets the finite sentinel `sqrt(total_area)`. Land continentality is not provided here.
+- **Stress:** `rho_air * cd * |u| u * (1 - ice_fraction)`, ice clamped 0..1, wind re-projected onto the tangent plane, exactly 0 on land. Surface layer of `wind` only.
+- Full recompute (ignores `DirtyRegion`). Fields stay f64.
+
+### Tests (`tests/part4a1.rs`, 12; 11 passed on first run, the lake test had a bad fixture and is fixed, unrerun)
+Mask equals an independent BFS reference on sphere, cube, walled and wrapped plane; raising sea level adds ocean and depth is relative to it; small pit is a lake and becomes ocean with a lower threshold; coast distance 0 at coasts, positive inland, 1-Lipschitz and each interior cell has a closer neighbour; wall vs wrap coast; no-ocean world all zero; all-ocean sphere one component; determinism; stress parallel, magnitude, zero on land; ice scaling and zero under full ice; parameter validation; scheduler order.
+
+### Verification status (4a-1)
+No Rust toolchain, no network: **not compiled, tests not run**. Only a delimiter-balance check was done. Expect small compile errors; run `cargo test --test part4a1` and send output back. Existing suites untouched (only `lib.rs` gained `pub mod ocean;` and one `pub use`).
+
+### Hand-off to 4a-2
+Read `ocean_mask`, `depth`, `coast_distance`, `wind_stress`, `sea_level`. Ocean components are independent basins for gyres. Open: migrate other modules to the shared `sea_level` field.
+
 ## Parameters from Part 1
 
 Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, boundary, surface_gravity, seed. Test modules: `diffusivity`, `steps`, `target`, `gain`, `value`. No physical field names are reserved yet.
@@ -473,7 +503,7 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 ## Open decisions for Part 3+
 0c. (3a) Band term is parametric. Land-sea monsoons only come from `temperature_sl` contrasts (no land heat capacity yet). Cube worlds use `elevation` as height; the geopotential difference between face centres and edges is not yet added to hydrostatic pressure.
 0d. (3a) Where thresholds for `blocking` should live once real vertical structure exists; whether wind should become a 2-layer field instead of two named fields.
-0. Thermal inertia / seasonal lag (blend of seasonal and annual insolation, or a heat-capacity state). Ocean vs land heat transport differences. Sea level as a global parameter instead of `sea_level` per module.
+0. Thermal inertia / seasonal lag (blend of seasonal and annual insolation, or a heat-capacity state). Ocean vs land heat transport differences. Sea level as a global parameter instead of `sea_level` per module (4a-1: shared `sea_level` field exists; other modules not yet migrated).
 0b. Resolution-independent slope limit; hotspots tied to plate motion; `rock_type` field (spec lists it) not yet produced.
 0c. Shadowing ignores planetary curvature and point lights; horizon test is a 3-hop, 30 degree azimuth approximation.
 1. Do modules need an explicit layer-aware Domain query API, or is `layers` + `FieldStore` enough?

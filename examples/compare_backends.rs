@@ -7,7 +7,7 @@ use enbuilder::*;
 fn main() {
     let lvl: u32 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(4);
     let seasons = [0.0, 0.25, 0.75];
-    let mut backends = vec![("cpu-f64", Backend::Cpu), ("cpu-f32-emul", Backend::CpuF32)];
+    let backends = vec![("cpu-f64", Backend::Cpu), ("cpu-f32-emul", Backend::CpuF32)];
     #[cfg(feature = "gpu")]
     backends.push(("gpu", Backend::Gpu));
     let mut results = Vec::new();
