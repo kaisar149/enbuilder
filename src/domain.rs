@@ -22,10 +22,46 @@ pub enum LightKind { Point { position: Vec3 }, Directional { direction: Vec3 } }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Light {
     pub kind: LightKind,
+    /// Directional: irradiance at the world (W/m^2, e.g. 1361). Point: irradiance
+    /// at `reference_distance_m` from the light.
     pub intensity: f64,
+    /// 0 = no orbital motion (season is ignored).
     pub orbital_period_s: f64,
+    /// 0 = no rotation (static light, e.g. tidally locked or flat worlds).
     pub day_length_s: f64,
     pub axial_tilt_rad: f64,
+    /// Point lights only: inverse-square reference distance (m).
+    pub reference_distance_m: f64,
+}
+
+impl Light {
+    /// `direction` points from the world toward the star at the equinox (season 0).
+    pub fn directional(direction: Vec3, intensity: f64) -> Light {
+        Light {
+            kind: LightKind::Directional { direction },
+            intensity,
+            orbital_period_s: 0.0,
+            day_length_s: 0.0,
+            axial_tilt_rad: 0.0,
+            reference_distance_m: 1.0,
+        }
+    }
+    pub fn point(position: Vec3, intensity: f64, reference_distance_m: f64) -> Light {
+        Light {
+            kind: LightKind::Point { position },
+            intensity,
+            orbital_period_s: 0.0,
+            day_length_s: 0.0,
+            axial_tilt_rad: 0.0,
+            reference_distance_m,
+        }
+    }
+    pub fn with_orbit(mut self, orbital_period_s: f64, day_length_s: f64, axial_tilt_rad: f64) -> Light {
+        self.orbital_period_s = orbital_period_s;
+        self.day_length_s = day_length_s;
+        self.axial_tilt_rad = axial_tilt_rad;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +93,8 @@ pub struct Domain {
     pub media: Media,
     pub boundary: BoundaryKind,
     pub layers: VerticalStructure,
+    /// Unit rotation axis in world coordinates (the `north_ref` given at construction).
+    pub spin_axis: Vec3,
     pub seed: u64,
 }
 
@@ -85,6 +123,7 @@ impl Domain {
             media: Media::earth_like(),
             boundary,
             layers: VerticalStructure { atmosphere_layers: 4, ocean_layers: 3 },
+            spin_axis: normalize(north_ref),
             seed,
         })
     }
