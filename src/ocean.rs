@@ -19,7 +19,7 @@
 use crate::domain::{BoundaryKind, Domain};
 use crate::error::{Error, Result};
 use crate::fields::FieldStore;
-use crate::math::{dot, length, scale, sub};
+use crate::math::{add, dot, length, scale, sub, Vec3};
 use crate::module::{DirtyRegion, Module, ModuleSpec, ParamSet};
 use crate::scheduler::Scheduler;
 use std::cmp::Reverse;
@@ -347,6 +347,8 @@ pub struct ComponentSolve {
     /// True when the component has no Dirichlet anchor and `sigma == 0` (operator singular): the right-hand side
     /// had its area-weighted mean removed and the solution is normalised to area-weighted mean zero.
     pub singular: bool,
+    /// BiCGSTAB only: how many times the iteration was restarted (breakdown or drifted recurrence residual). 0 for CG.
+    pub restarts: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -355,6 +357,26 @@ pub struct OceanSolution {
     pub psi: Vec<f64>,
     pub components: Vec<ComponentSolve>,
     pub total_iterations: usize,
+}
+
+/// Upwinded edge advection on the ocean subgraph (Part 4a-2d): the operator `N psi` with
+/// `(N psi)_i = (1/area_i) sum_k v_ik (psi_up(ik) - psi_i)`, where `v_ik = (c_e . n_ik) len_ik` is the outflow-positive flux of the
+/// velocity-like field `c` through the edge and `up(ik)` is the upstream cell. Only inflow edges (`v_ik < 0`) contribute
+/// (upstream = the neighbour), so this is the ADVECTIVE form `c . grad(psi)` (not the flux form `div(c psi)`): constants are
+/// annihilated exactly, no `psi div(c)` source appears. A land neighbour carries the Dirichlet value `psi = 0`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OceanAdvection {
+    /// Parallel to `OceanGraph::adj`: signed outflow flux `v_ik` (units of `c` times m). Exactly antisymmetric: `v_ik = -v_ki`.
+    pub flux: Vec<f64>,
+    /// Per local cell: `sum max(-v, 0)` over its LAND edges (inflow from land, upstream value 0): extra diagonal.
+    pub land_inflow: Vec<f64>,
+}
+
+impl OceanAdvection {
+    /// Largest `|v|` over all edges (0 means no advection at all).
+    pub fn max_abs_flux(&self) -> f64 {
+        self.flux.iter().chain(self.land_inflow.iter()).fold(0.0f64, |m, v| m.max(v.abs()))
+    }
 }
 
 /// The induced subgraph of `ocean_mask == 1` cells.
@@ -559,6 +581,301 @@ impl OceanGraph {
         Ok(OceanSolution { psi: self.merge_by_component(&sols), components: reports, total_iterations: total })
     }
 
+
+    /// Edge fluxes of the velocity-like field `c` (one tangent vector per GLOBAL cell) for [`OceanAdvection`]. Per edge
+    /// `c_e = (c_i + c_j)/2`, `n_ik` = unit chord from `i` to `j` projected on the mean tangent plane (wrapped edges handled as in
+    /// `GradientOp`), `v_ik = (c_e . n_ik) edge_len`. Both cells of an edge compute the same magnitude with opposite sign.
+    /// Wall/void edges are not in the adjacency and carry no term.
+    pub fn advection(&self, domain: &Domain, c: &[Vec3]) -> Result<OceanAdvection> {
+        let m = &domain.mesh;
+        if c.len() != m.n_cells {
+            return Err(Error::InvalidParam("OceanGraph::advection: velocity length does not match the mesh".into()));
+        }
+        if c.iter().any(|v| v.iter().any(|x| !x.is_finite())) {
+            return Err(Error::NonFinite("advection velocity".into()));
+        }
+        let mut flux = Vec::with_capacity(self.adj.len());
+        let mut land_inflow = vec![0.0; self.n];
+        for (l, &g) in self.cells.iter().enumerate() {
+            let g = g as usize;
+            let (a, b) = (m.adj_offsets[g] as usize, m.adj_offsets[g + 1] as usize);
+            for k in a..b {
+                let j = m.adj[k] as usize;
+                let dist = m.edge_dist[k];
+                let mut d = sub(m.centroid[j], m.centroid[g]);
+                if length(d) > 1.5 * dist {
+                    d = scale(d, -1.0); // wrapped edge
+                }
+                let upm = {
+                    let u = add(m.up[g], m.up[j]);
+                    let ul = length(u);
+                    if ul > 0.0 { scale(u, 1.0 / ul) } else { m.up[g] }
+                };
+                d = sub(d, scale(upm, dot(d, upm)));
+                let dl = length(d);
+                let v = if dl > 1e-12 * dist {
+                    let ce = scale(add(c[g], c[j]), 0.5);
+                    dot(ce, d) / dl * m.edge_len[k]
+                } else {
+                    0.0
+                };
+                if self.local_of[j] >= 0 {
+                    flux.push(v);
+                } else if v < 0.0 {
+                    land_inflow[l] += -v;
+                }
+            }
+        }
+        debug_assert_eq!(flux.len(), self.adj.len());
+        Ok(OceanAdvection { flux, land_inflow })
+    }
+
+    /// Matrix of `(C + A N + sigma A)` in the area-multiplied (Euclidean) form: returns `(diag, off)` with `off` parallel to `adj`
+    /// (`row_i = diag_i x_i - sum_q off_q x_adj[q]`). `diag_i = land_coef + sum(coef) + sum_{inflow}|v| + land_inflow + sigma area`,
+    /// `off_q = coef_q + max(-v_q, 0)`: an M-matrix (positive diagonal, non-positive off-diagonals, diagonally dominant).
+    fn advective_matrix(&self, sigma: f64, adv: &OceanAdvection) -> (Vec<f64>, Vec<f64>) {
+        let mut diag = vec![0.0; self.n];
+        let mut off = vec![0.0; self.adj.len()];
+        for i in 0..self.n {
+            let (a, b) = (self.offsets[i] as usize, self.offsets[i + 1] as usize);
+            let mut d = self.land_coef[i] + adv.land_inflow[i] + sigma * self.area[i];
+            for q in a..b {
+                let inflow = (-adv.flux[q]).max(0.0);
+                off[q] = self.coef[q] + inflow;
+                d += self.coef[q] + inflow;
+            }
+            diag[i] = d;
+        }
+        (diag, off)
+    }
+
+    /// Solve `(-L + N + sigma I) psi = b` (local vectors; `N` = upwinded advection, see [`OceanAdvection`]) with Jacobi-preconditioned
+    /// BiCGSTAB, one independent solve per component. `sigma >= 0`. The system is solved in the area-multiplied form
+    /// `(C + A N + sigma A) psi = A b`; with `adv` all zero it is the CG system of [`OceanGraph::solve`] (same answer to `tol`).
+    /// Restarts (fresh shadow residual) on breakdown or when the recurrence residual drifts from the true one; more than 20 restarts,
+    /// a non-finite value or `max_iters` returns `Error::NoConvergence`.
+    /// A component with no coast anchor and `sigma == 0` is singular (constants): its rhs gets the area-weighted mean removed, the
+    /// first cell is pinned to 0, and the result is normalised to area-weighted mean zero (`singular = true`). With advection the
+    /// remaining solvability condition holds only approximately; the dropped equation absorbs the residual.
+    pub fn solve_advective(&self, sigma: f64, adv: &OceanAdvection, b: &[f64], cfg: &CgConfig) -> Result<OceanSolution> {
+        if !sigma.is_finite() || sigma < 0.0 {
+            return Err(Error::InvalidParam("ocean solve: sigma must be finite and >= 0".into()));
+        }
+        if !(cfg.tol > 0.0) || !cfg.tol.is_finite() {
+            return Err(Error::InvalidParam("ocean solve: tol must be > 0".into()));
+        }
+        if b.len() != self.n {
+            return Err(Error::InvalidParam(format!("ocean solve: rhs length {} != {} ocean cells", b.len(), self.n)));
+        }
+        if adv.flux.len() != self.adj.len() || adv.land_inflow.len() != self.n {
+            return Err(Error::InvalidParam("ocean solve: advection does not belong to this graph".into()));
+        }
+        if b.iter().any(|v| !v.is_finite()) {
+            return Err(Error::NonFinite("ocean solve rhs".into()));
+        }
+        let (diag, off) = self.advective_matrix(sigma, adv);
+        let parts = self.split_by_component(b);
+        let mut sols = Vec::with_capacity(parts.len());
+        let mut reports = Vec::with_capacity(parts.len());
+        let mut total = 0usize;
+        for (k, rhs) in parts.iter().enumerate() {
+            let (x, rep) = self.bicgstab_component(k, sigma, &diag, &off, rhs, cfg)?;
+            total += rep.iterations;
+            sols.push(x);
+            reports.push(rep);
+        }
+        Ok(OceanSolution { psi: self.merge_by_component(&sols), components: reports, total_iterations: total })
+    }
+
+    fn bicgstab_component(&self, k: usize, sigma: f64, diag: &[f64], off: &[f64], b: &[f64], cfg: &CgConfig) -> Result<(Vec<f64>, ComponentSolve)> {
+        let cells = &self.comp_cells[k];
+        let m = cells.len();
+        let id = self.comp_ids[k];
+        let singular = sigma == 0.0 && !cells.iter().any(|&l| self.coast_adjacent[l as usize]);
+        let area: Vec<f64> = cells.iter().map(|&l| self.area[l as usize]).collect();
+        let mut rhs: Vec<f64> = (0..m).map(|p| area[p] * b[p]).collect();
+        if singular {
+            let sa: f64 = area.iter().sum();
+            let mean_b = rhs.iter().sum::<f64>() / sa;
+            for p in 0..m {
+                rhs[p] -= area[p] * mean_b;
+            }
+            rhs[0] = 0.0; // pinned row: x_0 = 0
+        }
+        let norm = |v: &[f64]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let dotp = |a: &[f64], c: &[f64]| (0..m).map(|p| a[p] * c[p]).sum::<f64>();
+        let bnorm = norm(&rhs);
+        let mut rep = ComponentSolve { id, n_cells: m, iterations: 0, rel_residual: 0.0, singular, restarts: 0 };
+        if bnorm == 0.0 {
+            return Ok((vec![0.0; m], rep));
+        }
+        let dinv: Vec<f64> = cells
+            .iter()
+            .enumerate()
+            .map(|(p, &l)| if singular && p == 0 { 1.0 } else { 1.0 / diag[l as usize] })
+            .collect();
+        let mul = |x: &[f64], out: &mut [f64]| {
+            for (p, &l) in cells.iter().enumerate() {
+                if singular && p == 0 {
+                    out[0] = x[0];
+                    continue;
+                }
+                let i = l as usize;
+                let (a, e) = (self.offsets[i] as usize, self.offsets[i + 1] as usize);
+                let mut s = diag[i] * x[p];
+                for q in a..e {
+                    s -= off[q] * x[self.comp_pos[self.adj[q] as usize] as usize];
+                }
+                out[p] = s;
+            }
+        };
+        let mut x = vec![0.0; m];
+        let mut r = rhs.clone();
+        let mut rhat = r.clone();
+        let (mut rho, mut alpha, mut omega) = (1.0f64, 1.0f64, 1.0f64);
+        let mut v = vec![0.0; m];
+        let mut pv = vec![0.0; m];
+        let mut y = vec![0.0; m];
+        let mut z = vec![0.0; m];
+        let mut s = vec![0.0; m];
+        let mut t = vec![0.0; m];
+        let mut tmp = vec![0.0; m];
+        let mut it = 0usize;
+        let mut rel = 1.0f64;
+        let max_restarts = 20usize;
+        let nc = |it: usize, rel: f64, what: &str| Error::NoConvergence { solver: format!("ocean_bicgstab ({what})"), iterations: it, residual: rel };
+        // Restart helper state is inlined below: `restart` = recompute the true residual and reset the recurrence.
+        let mut restart = true;
+        loop {
+            if restart {
+                mul(&x, &mut tmp);
+                for p in 0..m {
+                    r[p] = rhs[p] - tmp[p];
+                }
+                rel = norm(&r) / bnorm;
+                if !rel.is_finite() {
+                    return Err(nc(it, rel, "non-finite residual"));
+                }
+                if rel <= cfg.tol {
+                    break;
+                }
+                rhat.copy_from_slice(&r);
+                rho = 1.0;
+                alpha = 1.0;
+                omega = 1.0;
+                v.iter_mut().for_each(|e| *e = 0.0);
+                pv.iter_mut().for_each(|e| *e = 0.0);
+                restart = false;
+            }
+            if it >= cfg.max_iters {
+                return Err(nc(it, rel, "max_iters"));
+            }
+            let rho_new = dotp(&rhat, &r);
+            if !(rho_new.abs() > 1e-14 * norm(&rhat) * norm(&r)) || !rho_new.is_finite() {
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, rel, "breakdown: rho"));
+                }
+                restart = true;
+                continue;
+            }
+            let beta = (rho_new / rho) * (alpha / omega);
+            rho = rho_new;
+            for p in 0..m {
+                pv[p] = r[p] + beta * (pv[p] - omega * v[p]);
+                y[p] = dinv[p] * pv[p];
+            }
+            mul(&y, &mut v);
+            let rv = dotp(&rhat, &v);
+            if !(rv.abs() > 1e-14 * norm(&rhat) * norm(&v)) || !rv.is_finite() {
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, rel, "breakdown: rhat.v"));
+                }
+                restart = true;
+                continue;
+            }
+            alpha = rho / rv;
+            for p in 0..m {
+                s[p] = r[p] - alpha * v[p];
+            }
+            it += 1;
+            let sn = norm(&s) / bnorm;
+            if sn <= cfg.tol {
+                for p in 0..m {
+                    x[p] += alpha * y[p];
+                }
+                // confirm the early exit against the true residual
+                mul(&x, &mut tmp);
+                let tr = (0..m).map(|p| (rhs[p] - tmp[p]).powi(2)).sum::<f64>().sqrt() / bnorm;
+                if tr <= cfg.tol {
+                    rel = tr;
+                    break;
+                }
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, tr, "recurrence drift"));
+                }
+                restart = true;
+                continue;
+            }
+            for p in 0..m {
+                z[p] = dinv[p] * s[p];
+            }
+            mul(&z, &mut t);
+            let tt = dotp(&t, &t);
+            if !(tt > 0.0) || !tt.is_finite() {
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, rel, "breakdown: t.t"));
+                }
+                restart = true;
+                continue;
+            }
+            omega = dotp(&t, &s) / tt;
+            if !(omega.abs() > 1e-14) || !omega.is_finite() {
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, rel, "breakdown: omega"));
+                }
+                restart = true;
+                continue;
+            }
+            for p in 0..m {
+                x[p] += alpha * y[p] + omega * z[p];
+                r[p] = s[p] - omega * t[p];
+            }
+            rel = norm(&r) / bnorm; // `it` already counted this iteration (one BiCGSTAB iteration = two matrix products)
+            if !rel.is_finite() {
+                return Err(nc(it, rel, "non-finite residual"));
+            }
+            if rel <= cfg.tol {
+                // the recurrence says converged: confirm with the true residual
+                mul(&x, &mut tmp);
+                let tr = (0..m).map(|p| (rhs[p] - tmp[p]).powi(2)).sum::<f64>().sqrt() / bnorm;
+                if tr <= cfg.tol {
+                    rel = tr;
+                    break;
+                }
+                rep.restarts += 1;
+                if rep.restarts > max_restarts {
+                    return Err(nc(it, tr, "recurrence drift"));
+                }
+                restart = true;
+            }
+        }
+        if singular {
+            let sa: f64 = area.iter().sum();
+            let mean = (0..m).map(|p| area[p] * x[p]).sum::<f64>() / sa;
+            for e in x.iter_mut() {
+                *e -= mean;
+            }
+        }
+        rep.iterations = it;
+        rep.rel_residual = rel;
+        Ok((x, rep))
+    }
+
     /// `K x` for the symmetrised system on component `k` (component-local vectors).
     fn k_mul(&self, cells: &[u32], sigma: f64, x: &[f64], out: &mut [f64]) {
         for (p, &l) in cells.iter().enumerate() {
@@ -588,7 +905,7 @@ impl OceanGraph {
             }
         }
         let bnorm = rhs.iter().map(|v| v * v).sum::<f64>().sqrt();
-        let mut rep = ComponentSolve { id, n_cells: m, iterations: 0, rel_residual: 0.0, singular };
+        let mut rep = ComponentSolve { id, n_cells: m, iterations: 0, rel_residual: 0.0, singular, restarts: 0 };
         if bnorm == 0.0 {
             return Ok((vec![0.0; m], rep));
         }

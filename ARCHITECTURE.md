@@ -1,4 +1,6 @@
-# ARCHITECTURE.md (after PART 4a-2b: wind-stress curl and beta; NOT compiled, see "Part 4a-2b" verification status)
+# ARCHITECTURE.md (after PART 4a-2d: beta term, BiCGSTAB, western intensification; 4a-2b, 4a-2c and 4a-2d all compiled and passing)
+
+**Part 4a-2d (latest session, VERIFIED)** adds to `ocean.rs`: `OceanAdvection`, `OceanGraph::advection`, `OceanGraph::solve_advective` (Jacobi-preconditioned BiCGSTAB), `ComponentSolve.restarts`; to `ocean_currents.rs`: the beta term (`beta_on` default 1), `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (now 1e-5), new input `beta`, new output `boundary_layer_m`; `tests/part4a2d.rs` (16 tests), `examples/gyre_probe.rs`. This session had cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is unchanged). **Whole crate: every suite passes, zero warnings from the new code.** This also confirms that the previously UNVERIFIED 4a-2b (10 tests) and 4a-2c (12 tests) compile and pass as written (4a-2c needed only test edits for the new defaults, see "Part 4a-2d"). See "Part 4a-2d".
 
 **Part 4a-2a (latest session, VERIFIED)** adds `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` to `ocean.rs`, `Error::NoConvergence`, `tests/part4a2a.rs` (11 tests). This session had a Rust toolchain (cargo 1.97, offline, `gpu` feature stripped from `Cargo.toml` only for the sandbox build; the delivered `Cargo.toml` is unchanged). **Whole crate: all suites pass, zero warnings** (this also confirms `part4a1` (12/12; the lake-fixture fix works) and `part3c5` (7) compile and pass; the 3c-5 *benchmark* tables remain PENDING because no benchmark was run). No physics added; nothing in the pipeline reads `OceanGraph` yet.
 
@@ -40,7 +42,7 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `wind.rs` | `DiagnosticWind` (+ shared `pub(crate)` helpers) |
 | `backend.rs` | `ComputeBackend`, `Cpu`, `CpuF32`, `BackendKind`, `make_backend`, `PackedMesh`, `laplacian_f64`, `laplacian_f32_emulated`, `to_f32/to_f64`, `max_rel_error` |
 | `gpu/mod.rs` (feature `gpu`) | `GpuContext`, `GpuLaplacian`, `Gpu`, `LAPLACIAN_WGSL` |
-| `ocean.rs` | `SeaLevel`, `OceanMask`, `WindStress`, `add_ocean_mask_stage`, `add_ocean_stage`, pure fns `label_components`, `ocean_cells`, `coast_distance`, `stress_vector` (Part 4a-1); `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` (Part 4a-2a) |
+| `ocean.rs` | `SeaLevel`, `OceanMask`, `WindStress`, `add_ocean_mask_stage`, `add_ocean_stage`, pure fns `label_components`, `ocean_cells`, `coast_distance`, `stress_vector` (Part 4a-1); `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` (Part 4a-2a); `OceanAdvection`, `OceanGraph::advection`, `OceanGraph::solve_advective` (Part 4a-2d) |
 | `projection.rs` | `ProjConfig`, `ProjResult`, emulated kernels `k_flux_div/k_dot/k_matvec/k_flux_correct`, `project_f32_emulated`, `divergence_residual_f64`, `correct_f64`; feature `gpu`: WGSL sources + `project_gpu` |
 | `wind_gpu.rs` | `StepStatic`, `StepConfig`, `StepResult`, packing, emulated kernels `k_pressure_gradient/k_momentum_step/k_residual_reduce`, `solve_f32_emulated`; feature `gpu`: WGSL sources + `solve_gpu` |
 | `wind_stepped.rs` | `SteppedWind`, `add_atmosphere_stage_stepped(&mut Scheduler)` |
@@ -58,8 +60,12 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part3b3.rs` | Part 3b-3 acceptance tests (8) |
 | `tests/part4a1.rs` | Part 4a-1: ocean mask, coast distance, wind stress (12 tests, pass) |
 | `tests/part4a2a.rs` | Part 4a-2a: ocean operator and CG on synthetic problems (11 tests, pass) |
-| `ocean_forcing.rs` | `CurlOp`, `curl_of`, `curl_of_masked`, `beta_of`, `unpack_vec3`, `WindStressCurl`, `BetaTerm`, `add_gyre_forcing_stage` (Part 4a-2b, not compiled) |
-| `tests/part4a2b.rs` | Part 4a-2b: curl and beta analytic tests (10 tests, not run) |
+| `ocean_forcing.rs` | `CurlOp`, `curl_of`, `curl_of_masked`, `beta_of`, `unpack_vec3`, `WindStressCurl`, `BetaTerm`, `add_gyre_forcing_stage` (Part 4a-2b, compiled and passing) |
+| `tests/part4a2b.rs` | Part 4a-2b: curl and beta analytic tests (10 tests, pass) |
+| `ocean_currents.rs` | `OceanCurrents` (module `ocean_currents`), `add_ocean_currents_stage`, `current_from_psi`, `coast_vectors`, `coast_outflux`, `apply_coast_slip`, `clamp_speed` (Part 4a-2c); beta term, `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (Part 4a-2d); all compiled and passing |
+| `tests/part4a2c.rs` | Part 4a-2c: gyres, linearity, coast flux, divergence, clamp (12 tests, pass; module pinned to beta off and r 5e-8 by `run_with`) |
+| `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
+| `examples/gyre_probe.rs` | `cargo run --release --example gyre_probe -- <level> <r1> <r2> ...`: west/east peak speeds with beta off and on for the two-strip gyre world |
 | `tests/part3c4.rs` | Part 3c-4: f32 projection vs CPU f64 |
 | `tests/part3c3.rs` | Part 3c-3: f32 kernels vs CPU f64 stepped wind |
 | `tests/part3c2.rs` | Part 3c-2a: 5 always-on tests + 2 `gpu` tests (skip without adapter) |
@@ -579,10 +585,104 @@ Rotated mesh: solid-body 9.0e-3 / 4.5e-3 / 2.2e-3; curl grad 1.7e-2 / 9.1e-3 / 4
 ### Tests (`tests/part4a2b.rs`, 10): plane solid-body (wall and void, interior and wall cells, 1e-6); sphere solid-body `2 omega sin(lat)` (L3, L4, shrinking, < 2%); curl of gradient L3-L5 shrinking (< 0.7x per level, < 1% at L5); uniform field exactly 0 on sphere, cube, walled and wrapped plane, plus finiteness; masked rule (garbage on land, hand-summed stencil next to land); beta on the sphere (< 5%, positive); beta orientation independence (per 10-degree band means within 2%); f-plane = 0 and beta-plane within 1e-5; modules write fields, land curl is exactly 0, results equal the pure functions; module input errors.
 
 ### Verification status (4a-2b)
-**Not compiled, tests not run** (no Rust toolchain and no network in this session; cargo is absent). Only a delimiter-balance check plus the numpy mirrors above. The test tolerances were chosen from the mirror with at least 2x margin. Please run `cargo test --test part4a2b` and then `cargo test`; expect small compile slips.
+**UPDATE (4a-2d session): compiled and all 10 tests pass as written.** Original note: **Not compiled, tests not run** (no Rust toolchain and no network in this session; cargo is absent). Only a delimiter-balance check plus the numpy mirrors above. The test tolerances were chosen from the mirror with at least 2x margin. Please run `cargo test --test part4a2b` and then `cargo test`; expect small compile slips.
 
-### Hand-off to 4a-2c
+### Hand-off to 4a-2c (done, see "Part 4a-2c")
 RHS of the gyre equation = `stress_curl / (rho_ocean * H)` (units 1/s^2 after dividing by density and depth; `depth` field exists). The Stommel/Munk equation `beta d(psi)/dx = curl(tau)/(rho H) - r lap(psi)` needs a *directional* beta term (`beta` is a scalar along local north; the advective term is `beta * (north . grad psi)` rotated by 90 degrees), which is not symmetric, so CG will not apply directly to it; decide between a Rayleigh-friction-only streamfunction (`-L + sigma I` with `b = curl/(rho H)`, solvable now with 4a-2a) and a non-symmetric solver (BiCGSTAB or GMRES). Still open: the wall Dirichlet question from 4a-2a.
+
+## Part 4a-2c: symmetric gyres and the current field (beta off)
+
+**Wiring:** `add_ocean_stage` (or `add_ocean_mask_stage`) + `add_gyre_forcing_stage` + `add_ocean_currents_stage`. Order: `sea_level -> ocean_mask -> wind_stress_curl -> ocean_currents`. Nothing reads `psi`/`current` yet and nothing feeds back (SST coupling is a later part).
+
+| Module | Inputs | Outputs | Parameters (default) |
+|---|---|---|---|
+| `ocean_currents` | `stress_curl`, `ocean_mask`, `ocean_component` | `psi` (1 layer, m^2/s, 0 off-ocean), `current` (3 layers, world-space tangent vector, m/s, 0 off-ocean), `current_speed` (m/s) | `H_mixed_m` 100, `r_friction` 5e-8 (1/s), `rho_water` 1025, `max_current` 3, `beta_on` 0 (any other value is `InvalidParam` until 4a-2d), `coast_slip` 1 (0 or 1) |
+
+Output-only parameters (written by `run`, `set_param` rejects them, read with `Scheduler::module_param`): `clamped_cells`, `max_speed_raw` (m/s before the clamp, after the slip), `cg_iterations`, `slipped_cells`. `ocean_component` is a third input (the PART text lists two): `OceanGraph::from_fields` needs it.
+
+**Equation (as implemented, standard convention `u = k x grad(psi)`, `zeta = lap(psi)`):**
+`r * lap(psi) = + curl(tau) / (rho_w * H)`, `psi = 0` on every non-ocean cell. Solved as `(-L) psi = -curl(tau) / (rho_w H r)` by `OceanGraph::solve(0.0, ...)` (4a-2a CG). `rhs = -stress_curl / (rho_w * H_mixed_m * r_friction)` is computed with that operand order, so doubling `r_friction` or `H_mixed_m` scales the rhs by an exact power of two and `psi` halves bit-for-bit.
+**Velocity:** `current_i = up_i x (grad psi)_i`, `GradientOp` on the global scalar `psi` (land neighbours carry `psi = 0`), gradient re-projected onto the tangent plane first. Then, in this order: coast slip, clamp.
+**Coast slip (new, on by default):** for a coast cell with land edges `k`, `S_i = sum_k len_ik n_ik`, `L_i = sum_k len_ik`; if `|S_i| > 1e-6 L_i` the component of `current_i` along `S_i/|S_i|` is removed, so `F_i = sum_k len_ik (u_i . n_ik) = u_i . S_i = 0` (net flux through that cell's land edges, any topology, wrapped edges handled as in `GradientOp`). `coast_slip = 0` returns the raw stream-function current.
+**Clamp rule:** after slip, any `|current| > max_current` is scaled to exactly `max_current` (direction kept); the number of such cells is `clamped_cells`. The clamp changes only `current`, never `psi`.
+
+### Decisions and deviations (4a-2c)
+- **Deviation 1, sign of the equation.** The PART text writes `r lap(psi) = -curl(tau)/(rho H)` together with `current = k x grad(psi)`. With that pair a positive wind-stress curl drives anticyclonic flow (opposite to the physics: vorticity balance `r zeta = curl(tau)/(rho H)` with `zeta = lap(psi)` for `u = k x grad psi`). Implemented with the physical sign. Check in the mirror: northern subtropics (10..40 N, trades below, westerlies above) have negative curl, negative vorticity (clockwise), a positive-`psi` hill; the southern hemisphere is the exact mirror image. The test asserts the vorticity of the current equals `curl/(rho H r)` within 10% (mirror 0.985 at L4). 4a-2d will add `beta * d(psi)/dx` to the same convention (`r lap(psi) + beta d(psi)/dx = curl(tau)/(rho H)`).
+- **Deviation 2, "psi = 0 on every coast-adjacent cell" is read as `psi = 0` on every non-ocean cell** (the Dirichlet value lives on the land neighbour, as fixed in 4a-2a). On the coast-adjacent OCEAN cells `psi` is the first interior value; it is small compared with the deep ocean (mean ratio 0.41, 0.25, 0.14 at L3, L4, L5 in the mirror, halving per level) and is not zero.
+- **Deviation 3, no-normal-flow needed an explicit rule.** The raw `k x grad(psi)` current at a cell-centred coast cell is NOT parallel to the coast: the net flux through land edges was 0.63, 0.58, 0.45 of `L * max|u|` at L3-L5 (mirror), shrinking only slowly. Per-edge flux cannot be zero on a zig-zag coast (an oblique edge is crossed even by coast-parallel flow), so the criterion is the net flux per coast cell, which the slip rule makes zero to roundoff (1e-16). Walls, voids and wrap edges are not touched (see Open).
+- **Deviation 4, divergence.** The PART asks for `div(k x grad psi) < 1e-6` relative. A cell-centred gradient on a hex-pent mesh is non-divergent only in the continuum. Measured with the `GradientOp`-consistent divergence `sum coef.(u_j - u_i)` on cells two hops from any coast: **plane 1.3e-16** relative to `max|u|/dx` (central differences commute: exact to roundoff, test < 1e-9); **sphere** max 0.013, 0.026, 0.027 and rms 0.017, 0.012, 0.011 of the vorticity scale at L3-L5 (does NOT shrink in the max, pentagon neighbourhoods dominate; tests: max < 0.08, rms < 0.04 at L4).
+- **Default friction is far too small for ocean-like speeds.** With the PART defaults (`r_friction` 5e-8) a Rayleigh-friction-only gyre has `zeta = curl/(rho H r)`: speeds of 19 m/s at L4 (max), **1398 of 2316 ocean cells above 10 m/s and 2202 above 3 m/s**, so the 3 m/s clamp is active almost everywhere (`clamped_cells` reports it). `r_friction = 4e-6` gives 0.24 m/s with nothing clamped (mirror). Defaults left as specified; **please decide** whether to change the default now or when beta arrives (Stommel friction is typically 1e-6..1e-5 1/s).
+- Singular components (no coast anchor: all-ocean sphere) use the 4a-2a mean-zero rule; `slipped_cells = 0` there. An empty ocean gives all-zero fields.
+- Full recompute (ignores `DirtyRegion`), f64 fields, deterministic (CG starts from zero).
+
+### Numpy mirror results (`reference/mirror_gyres.py`, `mirror_gyres2.py`; same sphere geometry, `CurlOp`, `GradientOp`, `OceanGraph` as the Rust code, scipy CG to 1e-12)
+World: sphere, two meridional land strips (|y| < 0.13 R, |lat| < 70 deg), one ocean joined over the poles, stress `-0.1 cos(3 lat)` eastward.
+| quantity | L3 | L4 | L5 |
+|---|---|---|---|
+| ocean cells | 592 | 2316 | 9228 |
+| slipped coast cells (all coast cells) | 84 | 172 | 328 |
+| raw net coast flux / (L max u) | 0.63 | 0.58 | 0.45 |
+| after slip | 1e-16 | 1e-16 | 1e-16 |
+| band vorticity / (curl/(rho H r)), 10..40 N and S | 0.955 | 0.985 | 0.994 |
+| N/S vorticity ratio | -1.000 | -1.000 | -1.000 |
+| ring/deep mean abs psi | 0.41 | 0.25 | 0.14 |
+| LS div / vorticity, max (rms) | 0.013 (0.017) | 0.026 (0.012) | 0.027 (0.011) |
+Plane 40x30, land border, `tau_x = -0.1 cos(2 pi y/Ly)`: LS divergence 1.3e-16, raw coast flux up to 3.6 m/s per unit edge length (absolute) and 8e-17 after slip; uniform wind: curl exactly 0.
+
+### Tests (`tests/part4a2c.rs`, 12)
+psi zero on land + ring psi small + net coast flux zero with slip + nonzero without (so the rule does work); subtropical gyres opposite senses, vorticity = curl/(rho H r) within 10%, psi hill signs; opposite forcing reverses psi and current (1e-12), doubling `r_friction` and `H_mixed_m` halves psi and current; flat plane + uniform wind through the real scheduler gives exactly zero psi/current and 0 CG iterations; plane divergence at roundoff; sphere divergence small; clamp count equals an independent count at 3 and 10 m/s, direction kept, raw max > 10 at default friction, `r_friction = 4e-6` gives 0.1..0.6 m/s with 0 clamped; finite, tangent, zero on land, bit-deterministic; cube smoke (one land face: psi zero on land, zero net coast flux, CG ran); all-ocean sphere (singular, mean-zero psi); no-ocean world; wiring (spec, defaults, errors, `beta_on = 1` rejected, output-only params read-only, scheduler order, full run, input errors).
+
+### Verification status (4a-2c)
+**UPDATE (4a-2d session): compiled and all 12 tests pass as written (after the 4a-2d test edits above).** Original note: **Not compiled, tests not run** (no Rust toolchain, no network, cargo absent). Done: delimiter balance on all new files and the numpy mirror above (every threshold in `tests/part4a2c.rs` was taken from it with >= 1.5x margin; the cube, all-ocean, no-ocean, wiring and error tests make no numeric claims, so they are unverified in a different way: logic only). Please run `cargo test --test part4a2c` then `cargo test` and send back compile errors. Existing files touched: `lib.rs` only (`pub mod`, `pub use`, doc line).
+
+### Open (carry into 4a-2d)
+- **(Done in 4a-2d)** **Beta term:** `beta_on != 0` was rejected. 4a-2d needed the non-symmetric operator `r lap(psi) + beta d(psi)/dx` (directional `beta` via `north`/`east`), so BiCGSTAB or GMRES, or a symmetric split. The slip/clamp/velocity rules above carry over unchanged.
+- **Walls:** a `Wall`/`Closed` domain edge still imposes no `psi` condition and no slip (a walled plane without land lets the current pass the wall); wall normals are not stored in `Mesh`. The Dirichlet-wall option from 4a-2a is still undecided.
+- **(Default `r_friction` settled in 4a-2d: 1e-5)** Still open: whether `H_mixed_m` should come from the `depth` field.
+- Islands carry no separate circulation (all coasts share `psi = 0`), as specified.
+
+## Part 4a-2d: beta term, western intensification, BiCGSTAB
+
+**Wiring:** unchanged: `add_ocean_stage` + `add_gyre_forcing_stage` + `add_ocean_currents_stage`. Order `sea_level -> ocean_mask -> wind_stress_curl, beta_term -> ocean_currents`. `ocean_currents` now ALSO needs `beta` (always declared, even with `beta_on = 0`, which just does not read it; `add_gyre_forcing_stage` provides it from `coriolis_f`). Nothing feeds back yet.
+
+| Module | Inputs | Outputs | Parameters (default) |
+|---|---|---|---|
+| `ocean_currents` | `stress_curl`, `beta`, `ocean_mask`, `ocean_component` | `psi`, `current` (3 layers), `current_speed`, `boundary_layer_m` (m, `r/|beta|`, 0 off-ocean and where beta = 0) | `H_mixed_m` 100, **`r_friction` 1e-5** (was 5e-8), `rho_water` 1025, `max_current` 3, **`beta_on` 1** (0 or 1; was 0 only), `coast_slip` 1 |
+
+Output-only (read with `Scheduler::module_param`, `set_param` rejects): `clamped_cells`, `max_speed_raw`, `cg_iterations` (iterations of whichever solver ran; BiCGSTAB counts full iterations = 2 matrix products), `slipped_cells`, new: `solver_kind` (0 CG, 1 BiCGSTAB), `solver_restarts`, `layer_cells_min`, `layer_cells_median`, `under_resolved_fraction`, `under_resolved` (0/1). `OceanCurrents::warning()` returns the warning text of the last run.
+
+### Decisions (4a-2d)
+- **Option A chosen** (upwinded advection + BiCGSTAB, in `ocean.rs`, no dependency). B and C not implemented.
+- **Equation:** `r lap(psi) + beta d(psi)/d(east) = curl(tau)/(rho H)` with `u = k x grad(psi)` (same convention as 4a-2c, the sign of the beta term follows from `beta v = curl/(rho H) - r zeta`, `v = d psi/d east`). Solved as `(-L + N) psi = -curl/(rho H r)`, `N psi = -(beta/r) d psi/d east`: advection with velocity `c = -(beta/r) east` (1/m), i.e. information travels WEST, so the boundary layer is at the west coast (verified: negating beta moves it to the east coast).
+- **Upwind scheme (deviation from the PART text, deliberate):** per edge `v_ik = (c_e . n_ik) len_ik`, `c_e = (c_i + c_j)/2`, `n_ik` = unit chord i->j projected on the mean tangent plane (wrap handled as in `GradientOp`). `v_ik = -v_ki` exactly. Upwind by sign of `v`: outflow edges contribute nothing, inflow edges (`v < 0`) contribute `v (psi_k - psi_i)/area_i`. This is the ADVECTIVE (difference) form, not the flux form `v psi_up`: the flux form carries a spurious `psi div(c)` source because the discrete `div(beta east)` is not zero on the geodesic mesh, whereas the advective form annihilates constants exactly. Land neighbour: upstream value is the Dirichlet `psi = 0` (diagonal term `land_inflow`); walls/voids carry no term. Matrix is an M-matrix (positive diagonal, non-positive off-diagonals), so the scheme is monotone and stable for any `r`. First-order upwind adds numerical diffusion `~ dx/(2 delta)` relative to the physical one (`delta = r/beta`); the layer is smeared to about one cell when `delta < dx`.
+- **Solver:** Jacobi-preconditioned BiCGSTAB (van der Vorst) on the area-multiplied system `(C + A N + sigma A) psi = A b`, one per ocean component, tol 1e-10 (relative true residual), `max_iters` 20000 (`CgConfig`). Breakdown detection (`rho`, `rhat.v`, `t.t`, `omega`) and recurrence-vs-true-residual drift trigger a restart (fresh shadow residual); more than 20 restarts, a non-finite residual or `max_iters` returns `Error::NoConvergence { solver: "ocean_bicgstab (...)" }`. The restart/breakdown paths were never triggered in any test (restarts = 0 everywhere), so they are exercised only by reading, not by a test. With `beta == 0` everywhere (f-plane) the module uses the plain CG path, so the result is bit-identical to `beta_on = 0`.
+- **Singular component** (no coast anchor, e.g. all-ocean sphere): rhs mean removed, first cell pinned to 0, result normalised to area-weighted mean zero. With advection the left null vector is not the area measure, so the pinned system is only approximately consistent; the dropped equation absorbs the residual. Tested finite and deterministic only; not physically meaningful (no coast, no western boundary).
+- **Default `r_friction` changed 5e-8 -> 1e-5.** Not needed for solver stability (the M-matrix is stable for any r; BiCGSTAB converges at 5e-8 too). Reasons: (1) 5e-8 gives non-physical 19 m/s friction-only speeds (see 4a-2c); (2) the layer `r/beta` must be about one cell or more: at `r = 4e-6` the median layer is 0.44 cells at L4 (warns), at 1e-5 it is 1.11 cells at L4 and 2.2 at L5 (0.56 at L3, warns). Peak speeds at 1e-5 with the clamp off: 0.085 / 0.117 / 0.174 / 0.229 m/s at L3 / L4 / L5 / L6, nothing near the 3 m/s clamp. Mesh-resolution dependence of the peak is real (the layer carries a fixed transport through a thinner layer as the mesh refines); that is expected, not a bug.
+- **Boundary-layer report:** `delta_i = r/|beta_i|` against `sqrt(area_i)`; `under_resolved` = median ratio < 1 (most of the ocean thinner than one cell), fraction and min reported too; polar cells with beta ~ 0 have a huge `delta` and count as resolved. The warning is returned by `OceanCurrents::warning()` and flagged in `under_resolved`; no logging facility exists in the scheduler.
+- **4a-2c tests** (`tests/part4a2c.rs`): `run_with` now pins `beta_on = 0` and `r_friction = 5e-8` (the 4a-2c configuration) before applying a test's own overrides; the flat-plane scheduler test registers `add_gyre_forcing_stage` with a constant `coriolis_f`; the wiring test asserts the new inputs/outputs/defaults and that `beta_on` accepts 0 and 1 and rejects other values. No other change.
+
+### Measured (tests/part4a2d.rs, default parameters; `max_current` raised to 1e9 only where a test measures peaks)
+Gyre world = two meridional land strips, stress `-0.1 cos(3 lat)`; peak `current_speed` within 15 degrees of the west / east coast, lat 10..40, per hemisphere and basin (all four gyres give the same numbers on this mirror-symmetric world):
+| level | west peak (m/s) | east peak (m/s) | ratio | BiCGSTAB iterations (CG beta off) | median layer (cells) |
+|---|---|---|---|---|---|
+| 3 | 0.068 | 0.020 | 3.4 | 28 | 0.56 |
+| 4 | 0.117 | 0.022 | 5.4 | 56 | 1.11 |
+| 5 | 0.174 | 0.023 | 7.4 | 109 | 2.22 |
+Beta off: west/east = 1.000000 at every level. Beta negated: east 0.117 vs west 0.022 at L4 (intensification on the east coast). Cube 14/edge (one land face): 94 iterations, finite. Mean `psi` in 10..40 N / S: +7.97e4 / -7.97e4 m^2/s (L4); correlation of `psi` (beta on) with `psi` (beta off) 0.91. Interior meridional flow is equatorward in both subtropical bands. Plane 40x30 f-plane: x-asymmetry of psi 2e-16, CG path; plane beta-plane (r 7e-7, layer 3 cells): west peak 1.65, east 0.65 (2.6x). 1-D strip: BiCGSTAB equals the exact discrete (Thomas) solution to 4e-11 relative; manufactured non-symmetric problems (plane at cell Peclet ~5, sphere L3/L4) recovered to 2e-10 / 2e-11 / 2e-10 absolute (psi scale ~1). Zero advection: BiCGSTAB vs CG 1.8e-10 relative. Divergence of the current: beta-plane 1.5e-16 (roundoff, relative to `umax/dx`), sphere L4 max `|div|/max|zeta|` on deep cells 0.025 (same discretisation limit as 4a-2c).
+
+### Tests (`tests/part4a2d.rs`, 16)
+Solver (the 4a-2d-i content): agreement with CG at zero advection (with and without shift); manufactured non-symmetric solutions on plane and sphere; edge-flux antisymmetry, exactness for linear fields on the plane, constants annihilated; 1-D Stommel layer against Thomas, west position, mirror under reversed advection; errors (`sigma`, `tol`, lengths, NaN, foreign advection) and `NoConvergence` at `max_iters = 3` (reports exactly 3 iterations), zero rhs, determinism. Physics (the 4a-2d-ii content): beta off equals an independent 4a-2c pipeline bit-for-bit (garbage `beta` ignored); `beta = 0` with `beta_on = 1` bit-identical to off; west > 2x east for all four gyres at L3-L5 (and exactly 1 with beta off); reversed beta flips it; gyre senses and N/S antisymmetry; convergence on sphere L3-L5 and cube 14/edge; f-plane symmetric vs beta-plane asymmetric; no NaN and divergence; boundary-layer report (r = width x beta exactly, equator 437 km, width in cells doubles per level), warning on/off; scheduler wiring, defaults, read-only outputs, missing and NaN `beta`; all-ocean sphere.
+
+### Open (carry forward)
+- **Walls** still impose no `psi` condition and no slip (unchanged from 4a-2c; a walled plane with no land lets the current pass the wall).
+- **First-order upwind** smears the layer to about one cell; a second-order (limited) upwind or a finer mesh near western coasts would sharpen it. Only worth doing if the layer width matters to a later module (upwelling at western coasts).
+- **`H_mixed_m` from the `depth` field** and **islands** (separate circulation) still open. Beta-driven gyres are not yet coupled to SST (a later part).
+- Tropical equatorial dynamics (beta -> 2 Omega/R near the equator, where geostrophy fails) are not represented; the model is the Stommel gyre, not an equatorial-wave model.
+- Full recompute only (ignores `DirtyRegion`).
+- Breakdown/restart paths in the BiCGSTAB are not exercised by any test (no case triggered them).
+
+### Verification status (4a-2d)
+Compiled and run in the sandbox (cargo 1.97, offline, `gpu` feature stripped from a scratch copy of `Cargo.toml`; the delivered `Cargo.toml` is the original). `cargo test` passes every suite including `part4a2b` (10), `part4a2c` (12), `part4a2d` (16). No numpy mirror was written for 4a-2d: thresholds come from the Rust probe (`examples/gyre_probe.rs`) with >= 1.3x margin (the tightest: beta-plane west/east 2.6x against a 2x threshold; sphere L3 3.4x against 2x). The 3c-5 benchmark/GPU numbers remain PENDING as before.
 
 ## Parameters from Part 1
 
