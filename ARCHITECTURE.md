@@ -1,6 +1,8 @@
-# ARCHITECTURE.md (after PART 4b-1: depression handling, flow direction, drainage area; 4b-1 UNVERIFIED, written without a Rust toolchain; 4a-4 and older as recorded below)
+# ARCHITECTURE.md (after PART 4b-2: runoff, discharge, rivers, fill-and-spill lakes; 4b-2 WRITTEN WITHOUT A RUST TOOLCHAIN, python mirrors pass; 4b-1 and older as recorded below)
 
-**Part 4b-1 (latest session, VERIFIED: COMPILED)** adds `src/flow_routing.rs` (module `flow_routing`, pure functions `priority_flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, wiring `add_flow_routing_module` / `add_flow_routing_stage`), `tests/part4b1.rs` (11 tests), `reference/mirror_4b1.py` and `reference/mirror_4b1_cases.py` (both pass). `lib.rs` gained `pub mod flow_routing;` and one `pub use`. **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4b1`, then `cargo test`, and send back the compiler output.** See "Part 4b-1". (Whether 4a-4's `tests/part4a4.rs` was run on your machine is not recorded here; the 4a-4 note below still says UNVERIFIED for the cold-current-dry-coast test.)
+**Part 4b-2 (latest session, NOT COMPILED)** adds `src/rivers_lakes.rs` (module `rivers_lakes`, pure functions `solve_lake`, `lake_units`, wiring `add_rivers_lakes_module` / `add_rivers_lakes_stage`), `tests/part4b2.rs` (11 tests), `reference/mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py` (all pass). `lib.rs` gained `pub mod rivers_lakes;` and one `pub use`. **The sandbox had no Rust toolchain: please run `cargo test --test part4b2`, then `cargo test`, and send back the compiler output.** See "Part 4b-2". 4b-1 was reported compiled and passing by the project owner.
+
+**Part 4b-1 (VERIFIED: COMPILED, confirmed by the project owner)** adds `src/flow_routing.rs` (module `flow_routing`, pure functions `priority_flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, wiring `add_flow_routing_module` / `add_flow_routing_stage`), `tests/part4b1.rs` (11 tests), `reference/mirror_4b1.py` and `reference/mirror_4b1_cases.py` (both pass). `lib.rs` gained `pub mod flow_routing;` and one `pub use`. **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4b1`, then `cargo test`, and send back the compiler output.** See "Part 4b-1". (Whether 4a-4's `tests/part4a4.rs` was run on your machine is not recorded here; the 4a-4 note below still says UNVERIFIED for the cold-current-dry-coast test.)
 
 **Part 4a-4 (latest session, VERIFIED: COMPILED)** adds `src/ocean_secondary.rs` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients` and the wiring `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full`), `AlbedoModel::with_sea_ice()` and `add_energy_stage_ocean_flux_with(s, sea_ice)` in `energy.rs`, `OceanHeat::with_thermohaline()` in `ocean_heat.rs` (and `t_freeze` default 271.35 -> 150), `tests/part4a4.rs` (15 tests), `reference/mirror_4a4.py` (passes). **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4a4`, then `cargo test`, and send back the compiler output.** The ocean stage is NOT yet closed: see "Part 4a-4" for what is unverified, including the cold-current-dry-coast acceptance test which is only a diagnostic probe so far.
 
@@ -81,6 +83,9 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `flow_routing.rs` | `FlowRouting` (module `flow_routing`), `priority_flood`, `Flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, `add_flow_routing_module`, `add_flow_routing_stage` (Part 4b-1, NOT compiled) |
 | `tests/part4b1.rs` | Part 4b-1: invariants on sphere, cube, walled/wrapped plane, disc; hand-built bowl, plateau, pit, slope; Void vs Wall; closed world sink; all-land and all-ocean spheres; determinism; interface (11 tests, NOT compiled) |
 | `reference/mirror_4b1.py`, `mirror_4b1_cases.py` | python mirror of the flood, steepest descent and accumulation; checks the filled surface against an independent Planchon-Darboux fill and holds the hand-built expectations (`python mirror_4b1.py`) |
+| `rivers_lakes.rs` | `RiversLakes` (module `rivers_lakes`), `solve_lake`, `LakeSolve`, `lake_units`, `add_rivers_lakes_module`, `add_rivers_lakes_stage` (Part 4b-2, NOT compiled) |
+| `tests/part4b2.rs` | Part 4b-2: conservation and lake/river invariants on sphere, cube, walled/wrapped/void plane, disc, closed world; hand-built bowl (wet, weak, no rain), cascade, merge, tilted-plane rivers; wet/dry/parameter extremes; determinism; interface (11 tests, NOT compiled) |
+| `reference/mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py` | python mirror of the lake balance, Kahn contraction, river fill and conservation; hand-built expectations; port of the Rust invariants (`python mirror_4b2.py`) |
 | `ocean_heat.rs` | `OceanHeat` (module `ocean_heat`), `mask_flux`, `project_ocean_flux`, `transport_tendency`, `seed_ocean_heat_flux`, `add_ocean_climate_loop`, `add_atmosphere_ocean_pipeline`, `run_ocean_climate`, `OceanClimateReport`, `DEFAULT_MIXED_LAYER_HEAT_CAPACITY`, `DEFAULT_SST_RELAX_S` (Part 4a-3, compiled and passing) |
 | `tests/part4a3.rs` | Part 4a-3: plane analytic lag/damping, uniform tracer, flux closure, western warm boundary, bit-identical backwards compatibility, cold/warm coast response, loop convergence, interface, real pipeline with outer coupling (9 tests, pass) |
 | `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
@@ -846,7 +851,7 @@ Coastal upwelling on a walled plane, both signs of `f`, west and east coasts, ex
 - Sea ice does not insulate or release latent heat; no brine rejection; thermohaline flux is a nudge, not an overturning; `sst`-based density is not used (atmosphere T instead).
 - Equatorial upwelling (`|f| < f_floor`) is not modelled. Coastal upwelling is a cell-mean quantity, so it scales with 1/cell size; it should be capped by an offshore width on very fine meshes.
 
-## Part 4b-1: depression handling, flow direction, drainage area (UNVERIFIED: written without a Rust toolchain)
+## Part 4b-1: depression handling, flow direction, drainage area (VERIFIED: compiled and passing, per the project owner)
 
 Wiring: `add_flow_routing_stage(&mut s)` registers `sea_level`, `ocean_mask`, `flow_routing` (needs only `elevation`). Where the ocean stage is already registered (`add_ocean_stage`, the full pipeline) use `add_flow_routing_module(&mut s)` instead (two registrations of `ocean_mask` give `DuplicateModule`). The scheduler orders `sea_level -> ocean_mask -> flow_routing`. Nothing feeds back; no rivers, no lakes (4b-2).
 
@@ -883,6 +888,48 @@ No Rust toolchain, no network: **not compiled, tests not run**. Only a delimiter
 - Incremental update for edits (dirty region) is not implemented; routing is full-recompute O(n log n).
 - Void rule is now routing-only: ocean currents and moisture still treat Void as Wall.
 
+## Part 4b-2: runoff, discharge, rivers and fill-and-spill lakes (NOT COMPILED: written without a Rust toolchain)
+
+Wiring: `add_rivers_lakes_stage(&mut s)` registers `sea_level`, `ocean_mask`, `flow_routing`, `rivers_lakes`; needs `elevation`, `precipitation`, `evaporation` in the store (from the climate pipeline or supplied directly). Where the ocean stage or `flow_routing` are already registered use `add_rivers_lakes_module(&mut s)`. Order: `sea_level -> ocean_mask -> flow_routing -> rivers_lakes`. Nothing feeds back yet (soil moisture, vegetation and lake-climate effects are 4b-3 and later). Full recompute only (ignores `DirtyRegion`).
+
+| Module | Inputs | Outputs | Parameters (default) |
+|---|---|---|---|
+| `rivers_lakes` | `elevation`, `ocean_mask`, `elevation_filled`, `depression_depth`, `flow_dir`, `flow_order`, `precipitation` (kg/m^2/s), `evaporation` (kg/m^2/s) | `runoff` (kg/m^2/s), `discharge` (m^3/s), `river_mask` (0/1), `lake_id` (-1 none, else unit number), `lake_depth` (m), `lake_volume` (m^3 per cell), `lake_outflow` (m^3/s, same value on every cell of a lake), `salt_flat` (0/1) | `runoff_coeff` 0.4 (0..1), `river_threshold_m3s` 100, `lake_evap_factor` 3 (open water vs the land `evaporation` field), `min_lake_depth_m` 0.5, `rho_water` 1000. Output-only: `precip_land_m3s`, `land_loss_m3s`, `lake_evap_m3s`, `ocean_discharge_m3s`, `void_outflow_m3s`, `sink_inflow_m3s`, `lake_storage_change_m3s` (always 0), `balance_residual` (relative), `n_lakes`, `n_lakes_spilling`, `n_lakes_endorheic`, `n_lakes_dry`, `n_unresolved_lakes`, `river_cells`, `lake_area_m2`, `lake_volume_m3` |
+
+### Decisions (record)
+- **Runoff** on land cells = `runoff_coeff * max(precipitation, 0)`; volume flux `runoff * area / rho_water`. Ocean cells have none. The rest `(1 - coeff) * P` is "land loss" (soil, evapotranspiration; 4b-3 replaces it with soil moisture). Lake-surface rain is not split out: a lake cell's rain runs off like any land cell.
+- **Lake unit** = connected set (mesh adjacency) of cells with `depression_depth > 0` and equal `elevation_filled`. This IS the merge by spill height: basins that fill to one level are one lake; a lower basin next to a higher one stay two units and the higher one spills into the lower (cascade). Units are numbered 0.. by lowest cell index; `lake_id` is set on every unit cell, wet or dry, so lakes appear exactly where 4b-1 reports depressions.
+- **Steady-state balance per unit** (not a time march; storage change is 0 by construction): inflow `Qin` = the unit's own runoff plus everything draining in (after upstream lake losses). `Efull = sum(area * lake_evap_factor * max(evaporation,0) / rho)`. If `Qin > Efull`: full to the spill level (`lake_depth = filled - elevation`), outflow `Qin - Efull`, split equally over the unit's exit cells (cells whose receiver is outside the unit) and continued down `flow_dir`. Otherwise endorheic: no outflow; cells are wetted from the lowest floor upwards until evaporation equals `Qin` (the next cell, partly supplied, stays dry; water level = that cell's floor, or the spill level if all are wet). `Qin = 0` is a dry lake. Wet cells share one level `<=` the spill height. Spill happens only through the rim cells 4b-1 chose (lowest rim by construction).
+- **Salt flat**: cell of a non-spilling, not-full lake whose depth (after the minimum-depth rule) is 0. `min_lake_depth_m` removes shallower water (depth set to 0); that cell then counts as salt flat when the lake is endorheic.
+- **Accumulation** contracts each unit to one node and runs Kahn's algorithm (smallest node index first, deterministic). A rare tie-induced cycle (flat terrain where a rim cell drains back into its own lake) makes the leftover cells accumulate with no lake loss ("pass-through"); their lakes stay dry and are counted in `n_unresolved_lakes`. Never a hang or a panic. On the jittered test worlds the count is 0; on the periodic-tie closed world it is 21 of 32 (documented, harmless to conservation).
+- **Rivers**: `discharge > river_threshold_m3s` on non-lake land cells, then forward-filled downstream so a lake loss or a threshold dip never leaves a gap, and carried through spilling lakes (including lake-into-lake cascades: fixed in this session, the first draft stopped at a second lake). A river that ends in a non-spilling lake ends there. Ocean and lake cells are never river cells.
+- **Void edge** water leaves the world (counted in `void_outflow_m3s`); terminal sinks (closed worlds) collect in `sink_inflow_m3s`.
+
+### Conservation equation (tested to 1e-8 relative, observed ~1e-15)
+Steady state, all in m^3/s, rain on ocean cells excluded:
+`precip_land = land_loss + lake_evap + ocean_discharge + void_outflow + sink_inflow` (+ `lake_storage_change`, which is 0).
+Also independent of the split: `sum of discharge over all flow roots = runoff_coeff * precip_land - lake_evap`. `balance_residual` is exposed as a relative number.
+
+### Pure API
+`solve_lake(level, floors, areas, ev, q_in) -> LakeSolve{depth, q_out, evap, full}` (conserves `q_in = q_out + evap`), `lake_units(&Domain, filled, depth) -> (unit id per cell, cells per unit)`.
+
+### Mirror results (`reference/mirror_4b2.py`, same terrain and fields as the Rust tests: `P = p0*(0.5+u)`, `E = 1e-5*(0.5+u)`, p0 = 3e-5)
+Residual < 1e-15 on every world. Units / spilling: sphere L3 26/23, sphere L4 115/94, cube 75/45, walled plane 66/30, wrapped plane 64/31, Void plane 120/70 (all outflow over the edge), closed world 32/1 (21 unresolved). Wrapped plane wet (p0 3e-4): 64/64 spill; dry (3e-7): 0 spill, 170 salt-flat cells; `lake_evap_factor = 0`: ocean discharge = 0.4 * precip exactly. Hand-built bowl (9x7 plane): inflow 140, evaporation 6, outflow 134 m^3/s, depths 40 m and 30 m, river = exactly the three channel cells, weak rain depth 10 m with one salt-flat cell, no rain all salt flat. Rust tests assert these hand numbers and invariants, not the large-world counts (except wet: all spill; dry: none spill).
+
+### Tests (`tests/part4b2.rs`, 11)
+`check_hydro` re-derives conservation independently and checks: runoff formula; lake cells exactly the depressions; `lake_depth <= depression_depth`; `elevation + lake_depth <= elevation_filled` (never above the spill height); volume = area * depth; every neighbour outside a lake is at or above its spill height; every exit receiver is a rim cell at exactly the spill height; spilling lakes are full; endorheic wet cells share one level; salt flats dry and non-spilling; rivers complete above the threshold, never on lakes or ocean, gap-free downstream. Tests: `solve_lake` numbers; `lake_units` merging; bowl fill and spill (wet); weak rain and no rain; cascade and merge; tilted-plane river threshold (exactly columns 1..9); sphere, cube, walled, wrapped, Void, disc; closed world; wet/dry/no-evaporation/`runoff_coeff` 0 and 1 extremes; determinism and negative rain; interface and bad inputs.
+
+### Verification status (4b-2)
+No Rust toolchain, no network: **not compiled, tests not run**. The python mirrors run and pass (`mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py`). Run `cargo test --test part4b2`, then `cargo test`, and send the output back. Expect small compile or borrow errors. The two mirror-derived Rust assertions most likely to differ if the Rust ocean mask differs from the mirror's: `n_unresolved_lakes == 0` on the jittered worlds and "no lake spills" in the dry wrapped world.
+
+### Open (carry into 4b-3)
+- `runoff_coeff` is a constant; soil moisture, snow and glacier accumulation vs melt replace it in 4b-3 (and give a seasonal runoff).
+- Lakes do not yet feed back to the climate (no evaporation source, albedo or heat capacity from lake cells; open water uses the land `evaporation` field times `lake_evap_factor`).
+- Steady state only: no lake filling time, no flood pulses, no storage change; `lake_storage_change_m3s` is a placeholder 0.
+- Lakes below sea level vs ocean: a below-sea-level component smaller than the ocean-mask threshold is a lake here, a large one is ocean (4a-1 rule). Unchanged.
+- No incremental (dirty-region) update; the whole routing and lake solve is recomputed (O(n log n)).
+- Erosion (4b-4) will change `elevation`, so `flow_routing` and `rivers_lakes` must rerun inside that loop.
+
 ## Parameters from Part 1
 
 Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, boundary, surface_gravity, seed. Test modules: `diffusivity`, `steps`, `target`, `gain`, `value`. No physical field names are reserved yet.
@@ -916,7 +963,8 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 6. Whether `boundary_len` should also carry boundary kind per edge (needed once wrap and wall mix on one mesh).
 
 ## Verification status
-- Part 4b-1: written without a Rust toolchain; not compiled, tests not run; python mirrors pass (see "Part 4b-1").
+- Part 4b-2: written without a Rust toolchain; not compiled, tests not run; python mirrors pass (see "Part 4b-2").
+- Part 4b-1: reported compiled and passing by the project owner (originally written without a toolchain).
 - Part 1: compiled and all tests passing (reported by the project owner).
 - Part 2 compiled and its 15 tests pass (confirmed in sandbox this session).
 - Part 3a compiled and its 10 tests pass. Static check: balanced delimiters in `gradient.rs`, `pressure.rs`, `wind.rs`, `tests/part3.rs`. Expect to fix small type/borrow errors on first `cargo test`; please send the compiler output back.

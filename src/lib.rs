@@ -1,6 +1,6 @@
 //! enbuilder: physics-driven world generator core.
 //! Part 1 = foundations (domain, meshes, fields, scheduler); Part 2 = terrain and energy (stages A, B);
-//! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 4a-1 = sea level, ocean mask, wind stress; Part 4a-2b = wind-stress curl and beta; Part 4a-2c = gyres and current field (beta off); Part 4a-2d = beta term and BiCGSTAB; Part 4a-2e = wall and waterworld rules, tuned defaults, validation helpers (`ocean_validation`); Part 4a-3 = ocean heat transport and SST feedback (`ocean_heat`); Part 4a-4 = upwelling, thermohaline, sea ice, nutrients (`ocean_secondary`); Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`); Part 4b-1 = depression handling, flow direction, drainage area (`flow_routing`).
+//! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 4a-1 = sea level, ocean mask, wind stress; Part 4a-2b = wind-stress curl and beta; Part 4a-2c = gyres and current field (beta off); Part 4a-2d = beta term and BiCGSTAB; Part 4a-2e = wall and waterworld rules, tuned defaults, validation helpers (`ocean_validation`); Part 4a-3 = ocean heat transport and SST feedback (`ocean_heat`); Part 4a-4 = upwelling, thermohaline, sea ice, nutrients (`ocean_secondary`); Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`); Part 4b-1 = depression handling, flow direction, drainage area (`flow_routing`); Part 4b-2 = runoff, discharge, rivers, fill-and-spill lakes (`rivers_lakes`).
 pub mod backend;
 pub mod budget;
 pub mod consts;
@@ -28,6 +28,7 @@ pub mod ocean_validation;
 pub mod precipitation;
 pub mod projection;
 pub mod pressure;
+pub mod rivers_lakes;
 pub mod rng;
 pub mod scheduler;
 pub mod tectonics;
@@ -65,3 +66,4 @@ pub use energy::add_energy_stage_ocean_flux;
 pub use ocean_secondary::{add_atmosphere_ocean_pipeline_full, add_ocean_climate_loop_full, add_ocean_secondary_stage, Nutrients, SeaIce, Thermohaline, Upwelling};
 pub use energy::add_energy_stage_ocean_flux_with;
 pub use flow_routing::{add_flow_routing_module, add_flow_routing_stage, FlowRouting};
+pub use rivers_lakes::{add_rivers_lakes_module, add_rivers_lakes_stage, lake_units, solve_lake, LakeSolve, RiversLakes};
