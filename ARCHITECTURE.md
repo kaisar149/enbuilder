@@ -1,4 +1,7 @@
-# ARCHITECTURE.md (after PART 4a-3: ocean heat transport and the SST feedback; 4a-3 VERIFIED, whole crate green)
+# ARCHITECTURE.md (after PART 4a-4: upwelling, thermohaline, sea ice, nutrients; 4a-4 VERIFIED, written without a Rust toolchain; 4a-3 and older VERIFIED)
+
+**Part 4a-4 (latest session, VERIFIED: COMPILED)** adds `src/ocean_secondary.rs` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients` and the wiring `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full`), `AlbedoModel::with_sea_ice()` and `add_energy_stage_ocean_flux_with(s, sea_ice)` in `energy.rs`, `OceanHeat::with_thermohaline()` in `ocean_heat.rs` (and `t_freeze` default 271.35 -> 150), `tests/part4a4.rs` (15 tests), `reference/mirror_4a4.py` (passes). **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4a4`, then `cargo test`, and send back the compiler output.** The ocean stage is NOT yet closed: see "Part 4a-4" for what is unverified, including the cold-current-dry-coast acceptance test which is only a diagnostic probe so far.
+
 
 **Part 4a-3 (latest session, VERIFIED)** adds `src/ocean_heat.rs` (module `ocean_heat`, `run_ocean_climate`, wiring helpers), `EnergyBalance::with_ocean_heat()` and `add_energy_stage_ocean_flux` in `energy.rs`, `tests/part4a3.rs` (9 tests). Built with cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is the original). **Whole crate: every suite passes, no new warnings.** This session also **verified 4a-2e**: it compiled as written and `tests/part4.rs` (15) and every older suite pass, so the "NOT COMPILED" wording in the 4a-2e section below is obsolete. See "Part 4a-3".
 
@@ -72,6 +75,7 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part4.rs` | Part 4a-2e: current stage on sphere, waterworld, plane (wall, wrap, seam shift, wall pin), cube, tidally locked sphere, real pipeline, defaults and interface (15 tests, NOT compiled) |
 | `reference/mirror_4a2e.py` | numpy mirror of the 4a-2e rules and diagnostics on sphere, plane and cube; every threshold of `tests/part4.rs` comes from it (`python mirror_4a2e.py all`) |
 | `examples/current_probe.rs` | `cargo run --release --example current_probe -- <level>`: real climate pipeline into the current stage, prints speeds, seam spike, module counters (NOT compiled) |
+| `ocean_secondary.rs` | `Upwelling`, `Thermohaline`, `SeaIce`, `Nutrients` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients`), `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full` (Part 4a-4, NOT compiled) |
 | `ocean_heat.rs` | `OceanHeat` (module `ocean_heat`), `mask_flux`, `project_ocean_flux`, `transport_tendency`, `seed_ocean_heat_flux`, `add_ocean_climate_loop`, `add_atmosphere_ocean_pipeline`, `run_ocean_climate`, `OceanClimateReport`, `DEFAULT_MIXED_LAYER_HEAT_CAPACITY`, `DEFAULT_SST_RELAX_S` (Part 4a-3, compiled and passing) |
 | `tests/part4a3.rs` | Part 4a-3: plane analytic lag/damping, uniform tracer, flux closure, western warm boundary, bit-identical backwards compatibility, cold/warm coast response, loop convergence, interface, real pipeline with outer coupling (9 tests, pass) |
 | `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
@@ -772,7 +776,7 @@ Inputs `temperature_sl`, `current` (3 layers), `ocean_mask`. Outputs `sst` (K, 0
 | cfl | 0.5 | explicit sub-step = cfl / max cell outflow rate (advection + diffusion + 1/tau) |
 | max_steps / steady_tol_k | 200000 / 1e-5 K | stop when the largest per-step change is below the tolerance; hitting `max_steps` returns `Error::NoConvergence` (never an unconverged field) |
 | project | 1 | project the masked flux on the ocean subgraph (0 = off, only for tests) |
-| t_freeze | 271.35 K | lower bound of the reported `sst` (sea ice is not modelled here) |
+| t_freeze | 150 K (4a-4; was 271.35) | sanity floor of the reported `sst`; lowered so SST can fall below freezing and `sea_ice` can form |
 | warm_start | 1 | start from an existing `sst` (ocean cells > 0), else from `temperature_sl` |
 Output-only (set by `run`, rejected by `set_param`): `last_steps`, `last_residual_k`, `flux_closure` (`|sum A Q| / sum A|Q|`), `div_raw_rel`, `air_sea_mismatch`, `ocean_cells`.
 Pure functions: `mask_flux`, `project_ocean_flux(domain, ocean, &mut flux, tol, max_iters) -> (raw_div_rel, iters)`, `transport_tendency(domain, flux, dk, T, &mut out)`.
@@ -797,6 +801,45 @@ The PART file's "a cold coast current lowers local `temperature` on the adjacent
 - Heat transport uses the 4a-2c current, which is a layer-mean over the 20 m Ekman layer. Magnitudes (max about 80 W/m^2) are plausible but untuned.
 - `ocean_heat_flux` is not yet re-evaluated by the incremental/`DirtyRegion` machinery (full recompute only).
 - The seasonal inertia of SST (Part 3b-4 open issue 1) is still absent: `ocean_heat` is a steady state per season.
+
+## Part 4a-4: upwelling, thermohaline sinking, sea ice, nutrients (UNVERIFIED: written without a Rust toolchain)
+
+### Decisions (record)
+1. **Switches gate only their own process** (`upwelling_on`, `thermohaline_on`, `sea_ice_on`, default 1, values 0/1 only): switched off, that module's outputs are exactly zero. `salinity` and `ocean_density` are ALWAYS computed, so `sea_ice` does not change when `thermohaline_on = 0`. `nutrients` depends on `upwelling` by definition (it changes when upwelling is off, and only through it).
+2. **DEVIATION: coastal upwelling uses the WIND STRESS, not the current** (PART text: "current runs along the coast"). A clockwise gyre has its coast on the left on both the west and the east boundary, so a current-based rule marks every coast. Offshore Ekman transport of the stress across the coast is exactly "coast on the left (NH) / right (SH)" and its sign comes from `coriolis_f`.
+3. **Salinity proxy** `sigma = s_ref (E - P) sal_relax_s / (rho H)`, clamped to +-`sal_dev_max`, ocean-area mean removed (rivers return the freshwater), then `diffusion_steps` conservative diffusion steps on the ocean subgraph: mean = `s_ref` to rounding, values within `s_ref +- 2 sal_dev_max` (maximum principle). `E`, `P` are `evaporation`, `precipitation` (kg/m^2/s).
+4. **Reduced thermohaline:** density `rho_ref + beta_s (S - 35) - alpha_t (T_sl - t_ref)`; `deep_water_formation = 1` where `rho >= dw_density`; `thermohaline_flux = +q` in those cells and a uniform negative value elsewhere, area integral zero. It uses `temperature_sl` (the atmosphere's) because `sst` does not exist yet in scheduler A. `OceanHeat::with_thermohaline()` adds it to `ocean_heat_flux` (the sum stays zero). No overturning.
+5. **Placement:** `upwelling`, `thermohaline`, `nutrients` in scheduler A (`add_atmosphere_ocean_pipeline_full`; needs `wind_stress`, `coriolis_f`, `precipitation`, `evaporation`, `temperature_sl`, `coast_distance`, `ocean_mask`). `sea_ice` in scheduler B (`add_ocean_climate_loop_full`: loop `ocean_climate` = `[ocean_heat, sea_ice, albedo, energy_balance]`, watch `[temperature_sl, temperature, sst]`, relaxation 0.5, tolerance 2e-3, max 30), because it needs `sst`. A and B both need the zero seeds written by `seed_ocean_heat_flux` (now also `sea_ice_fraction`, `thermohaline_flux`).
+6. **Sea ice is a diagnostic:** `h = clamp(ice_per_k (T_f - sst), 0, h_max)`, `T_f = t_freeze_ref + freeze_slope (S - s_ref)` (271.35 K at S = 35, -0.054 K/psu), `sea_ice_fraction = min(1, h/h_full)`. `AlbedoModel::with_sea_ice()` takes `ice_fraction` of ocean cells (`elevation < sea_level`) from `sea_ice_fraction`, land keeps the temperature ramp; `wind_stress` already reads `ice_fraction`, so it sees the sea ice with no code change. No ice insulation, latent heat or ice drift (open).
+7. `nutrients = 1 - exp(-(max(w,0)/upwelling_ref + coast_weight exp(-d/coast_length_m) + river_input))`, `river_input` is a placeholder (0) until 4b.
+
+### New fields
+| Field | Producer | Meaning |
+|---|---|---|
+| `upwelling` (m/s, up +) | `upwelling` | `ekman_pumping + coastal_upwelling`, clamped to +-`max_upwelling` |
+| `ekman_pumping`, `coastal_upwelling` | `upwelling` | the two parts (`curl(tau/(rho f))`; `-(M.S)/A`, `M = (tau/(rho f)) x up`, `S` = `coast_vectors`) |
+| `salinity` (psu, 0 on land), `ocean_density` (kg/m^3) | `thermohaline` | always computed |
+| `deep_water_formation` (0/1), `thermohaline_flux` (W/m^2) | `thermohaline` | gated by `thermohaline_on` |
+| `sea_ice` (m), `sea_ice_fraction` (0..1) | `sea_ice` | gated by `sea_ice_on` |
+| `nutrients` (0..1) | `nutrients` | 0 on land |
+
+### Parameters (defaults)
+- `upwelling`: `upwelling_on` 1, `coastal_on` 1, `ekman_on` 1, `rho_water` 1025, `f_floor` 2e-5 1/s (below it no Ekman terms), `max_upwelling` 1e-3 m/s.
+- `thermohaline`: `thermohaline_on` 1, `s_ref` 35, `sal_relax_s` 3e7, `mixed_depth_m` 50, `rho_water` 1025, `sal_dev_max` 5, `diffusion_steps` 20, `rho_ref` 1027, `t_ref` 283, `alpha_t` 0.2, `beta_s` 0.78, `dw_density` 1029, `thermohaline_flux_wm2` 30, `dw_min_cells` 1.
+- `sea_ice`: `sea_ice_on` 1, `t_freeze_ref` 271.35, `s_ref` 35, `freeze_slope` -0.054, `ice_per_k` 0.5, `h_max` 5, `h_full` 0.5.
+- `nutrients`: `upwelling_ref` 1e-5, `coast_weight` 0.3, `coast_length_m` 3e5, `river_input` 0.
+- Changed: `ocean_heat.t_freeze` 271.35 -> 150.
+
+### Tests (`tests/part4a4.rs`, 15)
+Coastal upwelling on a walled plane, both signs of `f`, west and east coasts, exact magnitude `tau/(rho f) L/A` (mirror: 9.756e-5 m/s); sphere sign rule in both hemispheres from `coriolis_f` and exact flip with `-f`; Ekman pumping vs analytic curl (gain within 5%); equatorial floor; salinity mean 35 to 1e-9 and bounds under extreme forcing; deep water only poleward of 45 degrees and none below 30, flux integral zero; sea-ice freezing point incl. salinity effect and cap; albedo variant; nutrients (analytic 1-1/e, downwelling, river, coast monotonic); each switch zeroes only its own outputs; parameters/specs/errors; no-ocean world; full pipeline finite/bounded/converged/mean-conserved; warming shrinks ice and ice raises albedo (loop B only); determinism. `a_cold_coastal_current_yields_a_drier_coast_...` (was the ignored probe): precipitation change from the SST feedback (outer pass 1 -> 2, `earth_like_world(4)`), relative to the land band: cold coast -1.9e-7, warm coast +7.7e-7 kg/m^2/s (about -0.02 / +0.07 mm/day); thresholds -5e-8 / +1.5e-7 / gap 2e-7.
+
+### Verification status (4a-4)
+- NOT COMPILED, NOT RUN. `reference/mirror_4a4.py` (numpy) confirms the coastal sign/magnitude and the salinity mean/bounds/freezing-point arithmetic. All thresholds in the coupled tests (ice slack 1 K, convergence in 30 passes, ice exists at the poles, warming 0.39 -> 0.55 shrinks it) are untuned guesses: expect to adjust them.
+- Compiled and run by the project owner: 14 of 15 passed first time, the nutrients coast fixture was fixed twice (domain walls count as coast). "Cold current yields drier coast" measured by the probe and now an asserted test (pending a green rerun). Once `cargo test` is fully green the ocean stage (4a-1 .. 4a-4) is CLOSED.
+
+### Open (carry forward)
+- Sea ice does not insulate or release latent heat; no brine rejection; thermohaline flux is a nudge, not an overturning; `sst`-based density is not used (atmosphere T instead).
+- Equatorial upwelling (`|f| < f_floor`) is not modelled. Coastal upwelling is a cell-mean quantity, so it scales with 1/cell size; it should be capped by an offshore width on very fine meshes.
 
 ## Parameters from Part 1
 

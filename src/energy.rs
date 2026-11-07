@@ -36,7 +36,7 @@ const ALBEDO_PARAMS: [(&str, f64); 7] = [
     ("ice_t_hi", 273.15),   // ice-free above
 ];
 
-pub struct AlbedoModel { params: ParamSet }
+pub struct AlbedoModel { params: ParamSet, sea_ice: bool }
 
 impl Default for AlbedoModel {
     fn default() -> Self { Self::new() }
@@ -48,7 +48,14 @@ impl AlbedoModel {
         for (k, v) in ALBEDO_PARAMS.iter() {
             params.set(k, *v);
         }
-        AlbedoModel { params }
+        AlbedoModel { params, sea_ice: false }
+    }
+    /// Part 4a-4 variant: ocean cells (`elevation < sea_level`) take their ice fraction from the field `sea_ice_fraction`
+    /// (module `sea_ice`) instead of the temperature ramp; land is unchanged. `new()` is unchanged.
+    pub fn with_sea_ice() -> Self {
+        let mut m = Self::new();
+        m.sea_ice = true;
+        m
     }
 }
 
@@ -56,7 +63,13 @@ impl Module for AlbedoModel {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "albedo".into(),
-            inputs: vec!["temperature".into(), "elevation".into()],
+            inputs: {
+                let mut v = vec!["temperature".into(), "elevation".into()];
+                if self.sea_ice {
+                    v.push("sea_ice_fraction".into());
+                }
+                v
+            },
             outputs: vec!["albedo".into(), "ice_fraction".into()],
             anomaly_hooks: vec!["albedo".into()],
         }
@@ -82,9 +95,23 @@ impl Module for AlbedoModel {
         let t = fields.data("temperature")?.to_vec();
         let e = fields.data("elevation")?.to_vec();
         let n = t.len();
+        let si: Option<Vec<f64>> = if self.sea_ice {
+            let v = fields.data("sea_ice_fraction")?;
+            if v.len() != n {
+                return Err(Error::InvalidParam("albedo: 'sea_ice_fraction' must have 1 layer".into()));
+            }
+            Some(v.to_vec())
+        } else {
+            None
+        };
         let (mut alb, mut ice) = (vec![0.0; n], vec![0.0; n]);
         for i in 0..n {
-            let f = ((hi - t[i]) / (hi - lo)).clamp(0.0, 1.0);
+            let mut f = ((hi - t[i]) / (hi - lo)).clamp(0.0, 1.0);
+            if let Some(si) = &si {
+                if e[i] < p("sea_level") {
+                    f = si[i].clamp(0.0, 1.0);
+                }
+            }
             let surf = if e[i] < p("sea_level") { p("albedo_water") } else { p("albedo_land") };
             let a0 = f * p("albedo_ice") + (1.0 - f) * surf;
             alb[i] = a0 + (1.0 - a0) * p("cloud_albedo");
@@ -324,9 +351,12 @@ pub fn add_energy_stage_with(s: &mut Scheduler, insolation: Insolation) -> Resul
 
 /// Part 4a-3: like `add_energy_stage` but the energy balance is the `with_ocean_heat` variant, so it needs the field
 /// `ocean_heat_flux` to exist (see `ocean_heat::seed_ocean_heat_flux`). Same `ice_albedo` loop.
-pub fn add_energy_stage_ocean_flux(s: &mut Scheduler) -> Result<()> {
+pub fn add_energy_stage_ocean_flux(s: &mut Scheduler) -> Result<()> { add_energy_stage_ocean_flux_with(s, false) }
+
+/// Part 4a-4: as `add_energy_stage_ocean_flux`; with `sea_ice = true` the albedo is the `with_sea_ice` variant (needs `sea_ice_fraction`).
+pub fn add_energy_stage_ocean_flux_with(s: &mut Scheduler, sea_ice: bool) -> Result<()> {
     s.register(Box::new(Insolation::new()))?;
-    s.register(Box::new(AlbedoModel::new()))?;
+    s.register(Box::new(if sea_ice { AlbedoModel::with_sea_ice() } else { AlbedoModel::new() }))?;
     s.register(Box::new(EnergyBalance::with_ocean_heat()))?;
     s.add_feedback_loop(
         FeedbackLoop::new("ice_albedo", &["albedo", "energy_balance"])

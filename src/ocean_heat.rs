@@ -38,7 +38,7 @@ const OH_PARAMS: [(&str, f64); 9] = [
     ("max_steps", 200_000.0),
     ("steady_tol_k", 1e-5), // stop when the largest per-step change is below this (K)
     ("project", 1.0),       // 1 = project the masked edge flux to zero divergence on the ocean subgraph
-    ("t_freeze", 271.35),   // K, lower bound of the reported `sst` (sea ice itself is not modelled here)
+    ("t_freeze", 150.0),    // K, sanity floor of the reported `sst`. 4a-4: was 271.35; SST must be allowed below freezing so `sea_ice` can form
     ("warm_start", 1.0),    // 1 = start from an existing `sst` field
 ];
 /// Output-only (set by `run`, rejected by `set_param`).
@@ -46,6 +46,8 @@ const OH_OUT: [&str; 6] = ["last_steps", "last_residual_k", "flux_closure", "div
 
 pub struct OceanHeat {
     params: ParamSet,
+    /// Part 4a-4: also read `thermohaline_flux` (W/m^2, area integral zero) and add it to `ocean_heat_flux`.
+    thermohaline: bool,
 }
 
 impl Default for OceanHeat {
@@ -61,7 +63,14 @@ impl OceanHeat {
         for k in OH_OUT.iter() {
             params.set(k, 0.0);
         }
-        OceanHeat { params }
+        OceanHeat { params, thermohaline: false }
+    }
+    /// Part 4a-4 variant: declares the extra input `thermohaline_flux` and adds it to the output flux after the transport solve
+    /// (the sum stays zero because the thermohaline flux has zero area integral). `new()` is unchanged.
+    pub fn with_thermohaline() -> Self {
+        let mut m = Self::new();
+        m.thermohaline = true;
+        m
     }
 }
 
@@ -180,7 +189,13 @@ impl Module for OceanHeat {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "ocean_heat".into(),
-            inputs: ["temperature_sl", "current", "ocean_mask"].iter().map(|s| s.to_string()).collect(),
+            inputs: {
+                let mut v: Vec<String> = ["temperature_sl", "current", "ocean_mask"].iter().map(|s| s.to_string()).collect();
+                if self.thermohaline {
+                    v.push("thermohaline_flux".into());
+                }
+                v
+            },
             outputs: ["sst", "ocean_heat_flux"].iter().map(|s| s.to_string()).collect(),
             anomaly_hooks: vec!["sea_temperature_source".into()],
         }
@@ -307,6 +322,20 @@ impl Module for OceanHeat {
             qmax = qmax.max(q[i].abs());
             mism = mism.max((cap * ((t[i] - t_atm[i]) / tau) - q[i]).abs());
         }
+        if self.thermohaline {
+            let th = fields.data("thermohaline_flux")?;
+            if th.len() != n || th.iter().any(|v| !v.is_finite()) {
+                return Err(Error::InvalidParam("ocean_heat: 'thermohaline_flux' must be 1 finite layer".into()));
+            }
+            for i in 0..n {
+                if ocean[i] {
+                    q[i] += th[i];
+                    sq += mesh.area[i] * th[i];
+                    sa += mesh.area[i] * th[i].abs();
+                    qmax = qmax.max(q[i].abs());
+                }
+            }
+        }
         let tf = p("t_freeze");
         let sst: Vec<f64> = (0..n).map(|i| if ocean[i] { t[i].max(tf) } else { 0.0 }).collect();
 
@@ -326,9 +355,12 @@ impl Module for OceanHeat {
 
 /// Zero `ocean_heat_flux`, which the `with_ocean_heat` energy balance needs to exist before the first pass (no-op if present).
 pub fn seed_ocean_heat_flux(fields: &mut FieldStore) -> Result<()> {
-    if !fields.has("ocean_heat_flux") {
-        let n = fields.n_cells();
-        fields.put("ocean_heat_flux", 1, vec![0.0; n])?;
+    let n = fields.n_cells();
+    // 4a-4: also the zero starting values the sea-ice and thermohaline variants read in their first pass.
+    for name in ["ocean_heat_flux", "sea_ice_fraction", "thermohaline_flux"] {
+        if !fields.has(name) {
+            fields.put(name, 1, vec![0.0; n])?;
+        }
     }
     Ok(())
 }
