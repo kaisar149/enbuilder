@@ -57,6 +57,7 @@ fn fields(w: &World, beta: &[f64]) -> FieldStore {
 fn run(w: &World, beta: &[f64], params: &[(&str, f64)]) -> (OceanCurrents, FieldStore) {
     let mut f = fields(w, beta);
     let mut m = OceanCurrents::new();
+    m.set_param("H_mixed_m", 100.0).unwrap(); // 4a-2e retuned the default to 20 m; these tests were written for 100 m
     for &(k, v) in params {
         m.set_param(k, v).unwrap();
     }
@@ -685,7 +686,7 @@ fn wiring_through_the_scheduler_with_the_real_forcing_stages() {
 
 #[test]
 fn all_ocean_sphere_with_beta_is_finite_and_deterministic() {
-    // No coast anchor: the pinned-cell path of the singular case.
+    // No coast anchor. 4a-2e: the singular case is no longer solved, the waterworld rule gives zero flow (see tests/part4.rs).
     let d = sphere(3);
     let n = d.n_cells();
     let ocean = vec![true; n];
@@ -698,10 +699,14 @@ fn all_ocean_sphere_with_beta_is_finite_and_deterministic() {
     let (_, f2) = run(&w, &w.beta, &[]);
     assert_eq!(f.data("psi").unwrap(), f2.data("psi").unwrap());
     assert!(f.data("psi").unwrap().iter().chain(f.data("current").unwrap()).all(|v| v.is_finite()));
-    assert_eq!(m.params().get("solver_kind"), Some(1.0));
+    assert_eq!(m.params().get("solver_kind"), Some(0.0)); // nothing solved
+    assert_eq!(m.params().get("unanchored_cells"), Some(w.d.n_cells() as f64));
     // area-weighted mean zero
     let psi = f.data("psi").unwrap();
     let sa: f64 = w.d.mesh.area.iter().sum();
     let mean = (0..w.d.n_cells()).map(|i| psi[i] * w.d.mesh.area[i]).sum::<f64>() / sa;
-    assert!(mean.abs() < 1e-9 * max_abs(psi), "mean {mean}");
+    assert_eq!(mean, 0.0, "area-weighted mean must be zero");
+    // Waterworld rule (4a-2e): no anchor, so zero flow everywhere.
+    assert!(psi.iter().all(|&v| v == 0.0), "psi must be exactly zero");
+    assert!(f.data("current").unwrap().iter().all(|&v| v == 0.0), "current must be exactly zero");
 }

@@ -54,6 +54,7 @@ fn run_with(d: &Domain, f: &mut FieldStore, params: &[(&str, f64)]) -> OceanCurr
     // unless a test overrides it. The 4a-2d defaults (beta_on 1, r_friction 1e-5) are tested in tests/part4a2d.rs.
     m.set_param("beta_on", 0.0).unwrap();
     m.set_param("r_friction", 5.0e-8).unwrap();
+    m.set_param("H_mixed_m", 100.0).unwrap(); // 4a-2e retuned the default to 20 m; these tests were written for 100 m
     for &(k, v) in params {
         m.set_param(k, v).unwrap();
     }
@@ -386,6 +387,7 @@ fn cube_smoke_one_land_face() {
 
 #[test]
 fn all_ocean_sphere_has_no_anchor_and_stays_finite() {
+    // 4a-2e: a basin without any land coast now gets zero flow (waterworld rule); the checks below hold trivially but must keep holding.
     let d = sphere(3);
     let n = d.n_cells();
     let ocean = vec![true; n];
@@ -420,7 +422,7 @@ fn wiring_spec_defaults_and_errors() {
     assert_eq!(spec.outputs, v(&["psi", "current", "current_speed", "boundary_layer_m"]));
     let mut m = OceanCurrents::new();
     let p = m.params().clone();
-    assert_eq!((p.get("H_mixed_m"), p.get("r_friction"), p.get("rho_water"), p.get("max_current"), p.get("beta_on")), (Some(100.0), Some(1.0e-5), Some(1025.0), Some(3.0), Some(1.0))); // 4a-2d defaults
+    assert_eq!((p.get("H_mixed_m"), p.get("r_friction"), p.get("rho_water"), p.get("max_current"), p.get("beta_on")), (Some(20.0), Some(1.0e-5), Some(1025.0), Some(3.0), Some(1.0))); // 4a-2e defaults (H_mixed_m 100 -> 20)
     for (k, bad) in [("H_mixed_m", 0.0), ("r_friction", -1.0), ("rho_water", f64::NAN), ("max_current", 0.0), ("beta_on", 0.5), ("coast_slip", 0.5)] {
         assert!(matches!(m.set_param(k, bad), Err(Error::InvalidParam(_))), "{k}={bad}");
     }

@@ -1,4 +1,9 @@
-//! Parts 4a-2c and 4a-2d: gyres and the current field from the Stommel (friction + beta) vorticity equation.
+//! Parts 4a-2c, 4a-2d and 4a-2e: gyres and the current field from the Stommel (friction + beta) vorticity equation.
+//!
+//! 4a-2e rules (see ARCHITECTURE.md): (1) WALL RULE: on a `Wall`/`Closed` domain an ocean cell with `boundary_len > 0` is pinned like land
+//! (`psi = 0`, no current; `wall_pinned_cells`). (2) WATERWORLD RULE: an ocean component with no land-adjacent cell (after the wall rule) has
+//! no boundary condition, the problem is singular, so it gets ZERO flow and a warning (`unanchored_cells`). One land cell anywhere in a basin
+//! is enough to anchor it. Both rules are computed by [`effective_ocean`].
 //!
 //! Module and fields
 //!   ocean_currents : stress_curl, beta, ocean_mask, ocean_component
@@ -18,17 +23,20 @@
 //! a coast cell is removed, so the net flux through that cell's land edges is exactly 0; (2) the speed is clamped to
 //! `max_current` (direction kept) and the number of clamped cells is reported in the output-only parameter
 //! `clamped_cells`. Land and lake cells have `psi = 0` and `current = 0`.
-use crate::domain::Domain;
+use crate::domain::{BoundaryKind, Domain};
 use crate::error::{Error, Result};
 use crate::fields::FieldStore;
 use crate::gradient::GradientOp;
 use crate::math::{add, cross, dot, length, scale, sub, Vec3};
 use crate::module::{DirtyRegion, Module, ModuleSpec, ParamSet};
-use crate::ocean::{CgConfig, OceanGraph};
+use crate::ocean::{label_components, CgConfig, OceanGraph, OceanSolution};
 use crate::scheduler::Scheduler;
 
 /// Default Rayleigh friction (1/s); see ARCHITECTURE.md (4a-2d) for why it is larger than the 4a-2c value of 5e-8.
 pub const DEFAULT_R_FRICTION: f64 = 1.0e-5;
+/// Default mixed-layer depth (m), tuned in 4a-2e: the wind-driven (Ekman) layer, not the 100 m thermal mixed layer. With the 4a-2d value
+/// of 100 m the Earth-like boundary currents peaked near 0.17 m/s; speeds scale exactly as 1/H, so 20 m gives about 0.87 m/s.
+pub const DEFAULT_H_MIXED_M: f64 = 20.0;
 
 fn names(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
 
@@ -132,6 +140,72 @@ pub fn clamp_speed(u: &mut [Vec3], max_speed: f64) -> usize {
     count
 }
 
+/// The ocean the solver actually sees after the 4a-2e rules.
+#[derive(Debug, Clone)]
+pub struct EffectiveOcean {
+    /// Effective ocean flag per cell: the input mask minus wall-pinned cells minus unanchored components.
+    pub ocean: Vec<bool>,
+    /// Component id per cell (-1 off-ocean). Equal to the input ids when nothing was pinned.
+    pub component: Vec<i64>,
+    /// The graph of the effective ocean (`graph.n == 0` for a waterworld).
+    pub graph: OceanGraph,
+    /// Ocean cells turned into land-like cells because they touch a wall (Wall/Closed domains only).
+    pub wall_pinned: usize,
+    /// Ocean cells that belong to a basin without any land-adjacent cell (zero flow).
+    pub unanchored: usize,
+}
+
+/// Apply the 4a-2e wall and waterworld rules (wall pinning always on).
+pub fn effective_ocean(domain: &Domain, ocean: &[bool], component: &[i64]) -> Result<EffectiveOcean> { effective_ocean_with(domain, ocean, component, true) }
+
+/// Same with the wall rule switchable (`wall_pin = false` keeps wall edges as no-flux edges, the 4a-2c/2d behaviour).
+pub fn effective_ocean_with(domain: &Domain, ocean: &[bool], component: &[i64], wall_pin: bool) -> Result<EffectiveOcean> {
+    let n = domain.n_cells();
+    if ocean.len() != n || component.len() != n {
+        return Err(Error::InvalidParam("effective_ocean: mask/component length does not match the mesh".into()));
+    }
+    let mut eff = ocean.to_vec();
+    let mut comp = component.to_vec();
+    let mut pinned = 0usize;
+    if wall_pin && matches!(domain.boundary, BoundaryKind::Wall | BoundaryKind::Closed) {
+        for i in 0..n {
+            if eff[i] && domain.mesh.boundary_len[i] > 0.0 {
+                eff[i] = false;
+                pinned += 1;
+            }
+        }
+        if pinned > 0 {
+            // Pinning can split a basin: relabel (ids ordered by lowest cell index, as `ocean_cells` does).
+            let (c, _) = label_components(domain, &eff);
+            comp = c;
+        }
+    }
+    for i in 0..n {
+        if !eff[i] {
+            comp[i] = -1;
+        }
+    }
+    let mut graph = OceanGraph::new(domain, &eff, &comp)?;
+    let mut unanchored = 0usize;
+    for cells in &graph.comp_cells {
+        if !cells.iter().any(|&l| graph.coast_adjacent[l as usize]) {
+            for &l in cells {
+                eff[graph.cells[l as usize] as usize] = false;
+                unanchored += 1;
+            }
+        }
+    }
+    if unanchored > 0 {
+        for i in 0..n {
+            if !eff[i] {
+                comp[i] = -1;
+            }
+        }
+        graph = OceanGraph::new(domain, &eff, &comp)?;
+    }
+    Ok(EffectiveOcean { ocean: eff, component: comp, graph, wall_pinned: pinned, unanchored })
+}
+
 /// Western boundary-layer (Stommel) width `r/beta` against the mesh cell size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundaryLayerReport {
@@ -186,11 +260,11 @@ pub fn boundary_layer_warning(rep: &BoundaryLayerReport, r: f64) -> Option<Strin
 // Module
 // ---------------------------------------------------------------------------------------------
 
-/// Defaults: `H_mixed_m` 100, `r_friction` DEFAULT_R_FRICTION_PLACEHOLDER (1/s), `rho_water` 1025, `max_current` 3 (m/s), `beta_on` 1 (0 or 1; 0 is the
+/// Defaults: `H_mixed_m` 20 (m, tuned in 4a-2e), `r_friction` 1e-5 (1/s), `rho_water` 1025, `max_current` 3 (m/s), `beta_on` 1 (0 or 1; 0 is the
 /// exact 4a-2c equation), `coast_slip` 1. Output-only (set by `run`, rejected by `set_param`): `clamped_cells`,
 /// `max_speed_raw` (m/s before the clamp), `cg_iterations` (iterations of whichever solver ran), `slipped_cells`,
-/// `solver_kind` (0 = CG, 1 = BiCGSTAB), `solver_restarts`, and the boundary-layer report `layer_cells_min`, `layer_cells_median`,
-/// `under_resolved_fraction`, `under_resolved` (0/1; text from [`OceanCurrents::warning`]).
+/// `solver_kind` (0 = CG, 1 = BiCGSTAB), `solver_restarts`, `unanchored_cells`, `wall_pinned_cells` (4a-2e), and the boundary-layer report `layer_cells_min`, `layer_cells_median`,
+/// `under_resolved_fraction`, `under_resolved` (0/1; text from [`OceanCurrents::warning`]). `wall_pin` (0 or 1, default 1) switches the wall rule off.
 pub struct OceanCurrents { params: ParamSet, warning: Option<String> }
 
 impl Default for OceanCurrents {
@@ -201,12 +275,15 @@ impl OceanCurrents {
     pub fn new() -> Self {
         OceanCurrents {
             params: ParamSet::new()
-                .with("H_mixed_m", 100.0)
+                .with("H_mixed_m", DEFAULT_H_MIXED_M)
                 .with("r_friction", DEFAULT_R_FRICTION)
                 .with("rho_water", 1025.0)
                 .with("max_current", 3.0)
                 .with("beta_on", 1.0)
                 .with("coast_slip", 1.0)
+                .with("wall_pin", 1.0)
+                .with("unanchored_cells", 0.0)
+                .with("wall_pinned_cells", 0.0)
                 .with("clamped_cells", 0.0)
                 .with("max_speed_raw", 0.0)
                 .with("cg_iterations", 0.0)
@@ -246,9 +323,9 @@ impl Module for OceanCurrents {
                     return Err(Error::InvalidParam(format!("ocean_currents.beta_on must be 0 or 1 (got {value})")));
                 }
             }
-            "coast_slip" => {
+            "coast_slip" | "wall_pin" => {
                 if value != 0.0 && value != 1.0 {
-                    return Err(Error::InvalidParam(format!("ocean_currents.coast_slip must be 0 or 1 (got {value})")));
+                    return Err(Error::InvalidParam(format!("ocean_currents.{name} must be 0 or 1 (got {value})")));
                 }
             }
             _ => return Err(Error::InvalidParam(format!("ocean_currents has no settable parameter '{name}'"))),
@@ -266,11 +343,16 @@ impl Module for OceanCurrents {
             return Err(Error::NonFinite("stress_curl".into()));
         }
         let curl = curl.to_vec();
-        let graph = OceanGraph::from_fields(domain, fields)?;
-        let ocean: Vec<bool> = fields.data("ocean_mask")?.iter().map(|&m| m > 0.5).collect();
+        let ocean_in: Vec<bool> = fields.data("ocean_mask")?.iter().map(|&m| m > 0.5).collect();
+        let comp_in: Vec<i64> = fields.data("ocean_component")?.iter().map(|&v| v.round() as i64).collect();
+        // 4a-2e: wall rule and waterworld rule. Everything below works on the EFFECTIVE ocean (pinned and unanchored cells are land-like).
+        let wall_pin = self.params.get_or("wall_pin", 1.0) > 0.5;
+        let eo = effective_ocean_with(domain, &ocean_in, &comp_in, wall_pin)?;
+        let graph = &eo.graph;
+        let ocean = &eo.ocean;
 
-        let h = self.params.get_or("H_mixed_m", 100.0);
-        let r = self.params.get_or("r_friction", 5.0e-8);
+        let h = self.params.get_or("H_mixed_m", DEFAULT_H_MIXED_M);
+        let r = self.params.get_or("r_friction", DEFAULT_R_FRICTION);
         let rho = self.params.get_or("rho_water", 1025.0);
         let vmax = self.params.get_or("max_current", 3.0);
         let slip = self.params.get_or("coast_slip", 1.0) > 0.5;
@@ -282,7 +364,7 @@ impl Module for OceanCurrents {
         let cfg = CgConfig::default();
         let (mut kind, mut restarts) = (0.0, 0usize);
         let mut layer = BoundaryLayerReport { width_m: vec![0.0; n], n_cells: 0, cells_min: 0.0, cells_median: 0.0, under_resolved_fraction: 0.0, under_resolved: false };
-        let sol = if beta_on {
+        let beta_field: Option<Vec<f64>> = if beta_on {
             let beta = fields.data("beta")?;
             if beta.len() != n {
                 return Err(Error::InvalidParam("ocean_currents: 'beta' must have 1 layer".into()));
@@ -290,9 +372,17 @@ impl Module for OceanCurrents {
             if beta.iter().any(|v| !v.is_finite()) {
                 return Err(Error::NonFinite("beta".into()));
             }
+            Some(beta.to_vec())
+        } else {
+            None
+        };
+        let sol = if graph.n == 0 {
+            // Empty effective ocean (no ocean, or a waterworld): nothing to solve, zero flow.
+            OceanSolution { psi: Vec::new(), components: Vec::new(), total_iterations: 0 }
+        } else if let Some(beta) = &beta_field {
             // Upwinded advection with velocity -(beta/r) east: the system is (-L + N) psi = -curl/(rho H r).
             let c: Vec<Vec3> = (0..n).map(|i| if ocean[i] { scale(domain.frames[i].east, -beta[i] / r) } else { [0.0; 3] }).collect();
-            layer = boundary_layer_report(domain, beta, &ocean, r);
+            layer = boundary_layer_report(domain, beta, ocean, r);
             let adv = graph.advection(domain, &c)?;
             if adv.max_abs_flux() > 0.0 {
                 let s = graph.solve_advective(0.0, &adv, &b, &cfg)?;
@@ -308,8 +398,8 @@ impl Module for OceanCurrents {
         let psi = graph.to_global(&sol.psi);
 
         let grad = GradientOp::new(domain);
-        let mut u = current_from_psi(domain, &grad, &psi, &ocean);
-        let slipped = if slip { apply_coast_slip(domain, &ocean, &mut u) } else { 0 };
+        let mut u = current_from_psi(domain, &grad, &psi, ocean);
+        let slipped = if slip { apply_coast_slip(domain, ocean, &mut u) } else { 0 };
         let raw_max = u.iter().fold(0.0f64, |m, v| m.max(length(*v)));
         let clamped = clamp_speed(&mut u, vmax);
         let speed: Vec<f64> = u.iter().map(|v| length(*v)).collect();
@@ -322,7 +412,24 @@ impl Module for OceanCurrents {
         fields.put("current", 3, flat)?;
         fields.put("current_speed", 1, speed)?;
         fields.put("boundary_layer_m", 1, layer.width_m.clone())?;
-        self.warning = if beta_on { boundary_layer_warning(&layer, r) } else { None };
+        let mut warn: Vec<String> = Vec::new();
+        if eo.unanchored > 0 {
+            warn.push(format!(
+                "ocean_currents: {} ocean cells belong to a basin with no land coast (a waterworld or a wrapped all-ocean domain). With no boundary condition the stream-function problem is singular, so these cells get zero flow.",
+                eo.unanchored
+            ));
+        }
+        if eo.wall_pinned > 0 {
+            warn.push(format!("ocean_currents: {} ocean cells touch a domain wall and are pinned like land (psi = 0, no current).", eo.wall_pinned));
+        }
+        if beta_on {
+            if let Some(t) = boundary_layer_warning(&layer, r) {
+                warn.push(t);
+            }
+        }
+        self.warning = if warn.is_empty() { None } else { Some(warn.join(" ")) };
+        self.params.set("unanchored_cells", eo.unanchored as f64);
+        self.params.set("wall_pinned_cells", eo.wall_pinned as f64);
         self.params.set("solver_kind", kind);
         self.params.set("solver_restarts", restarts as f64);
         self.params.set("layer_cells_min", layer.cells_min);

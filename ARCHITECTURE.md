@@ -1,6 +1,8 @@
-# ARCHITECTURE.md (after PART 4a-2d: beta term, BiCGSTAB, western intensification; 4a-2b, 4a-2c and 4a-2d all compiled and passing)
+# ARCHITECTURE.md (after PART 4a-2e: current validation, wall and waterworld rules, tuned defaults; 4a-2e is WRITTEN BUT NOT COMPILED, 4a-2b to 4a-2d compiled and passing)
 
-**Part 4a-2d (latest session, VERIFIED)** adds to `ocean.rs`: `OceanAdvection`, `OceanGraph::advection`, `OceanGraph::solve_advective` (Jacobi-preconditioned BiCGSTAB), `ComponentSolve.restarts`; to `ocean_currents.rs`: the beta term (`beta_on` default 1), `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (now 1e-5), new input `beta`, new output `boundary_layer_m`; `tests/part4a2d.rs` (16 tests), `examples/gyre_probe.rs`. This session had cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is unchanged). **Whole crate: every suite passes, zero warnings from the new code.** This also confirms that the previously UNVERIFIED 4a-2b (10 tests) and 4a-2c (12 tests) compile and pass as written (4a-2c needed only test edits for the new defaults, see "Part 4a-2d"). See "Part 4a-2d".
+**Part 4a-2e (latest session, UNVERIFIED: not compiled)** adds `src/ocean_validation.rs` (pure diagnostics), `effective_ocean` / `effective_ocean_with` / `EffectiveOcean` / `DEFAULT_H_MIXED_M` in `ocean_currents.rs`, output-only params `unanchored_cells`, `wall_pinned_cells` and the switch `wall_pin` on `ocean_currents`, `tests/part4.rs` (the 4a-2e acceptance suite), `reference/mirror_4a2e.py`, `examples/current_probe.rs`. Behaviour changes: **`H_mixed_m` default 100 -> 20**, a **waterworld basin gets zero flow** (it used to be solved as a singular problem), **ocean cells touching a Wall/Closed domain edge are pinned like land**. Touched older tests: `tests/part4a2c.rs` (`run_with` pins `H_mixed_m = 100`; the defaults test expects 20), `tests/part4a2d.rs` (`run` pins `H_mixed_m = 100`; the all-ocean-sphere test expects `solver_kind` 0 and `unanchored_cells` = n). **This session had no Rust toolchain and no network (cargo absent), so nothing was compiled or run.** Please run `cargo test --test part4`, then `cargo test`, and send back the compiler output. See "Part 4a-2e".
+
+**Part 4a-2d (previous session, VERIFIED)** adds to `ocean.rs`: `OceanAdvection`, `OceanGraph::advection`, `OceanGraph::solve_advective` (Jacobi-preconditioned BiCGSTAB), `ComponentSolve.restarts`; to `ocean_currents.rs`: the beta term (`beta_on` default 1), `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (now 1e-5), new input `beta`, new output `boundary_layer_m`; `tests/part4a2d.rs` (16 tests), `examples/gyre_probe.rs`. This session had cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is unchanged). **Whole crate: every suite passes, zero warnings from the new code.** This also confirms that the previously UNVERIFIED 4a-2b (10 tests) and 4a-2c (12 tests) compile and pass as written (4a-2c needed only test edits for the new defaults, see "Part 4a-2d"). See "Part 4a-2d".
 
 **Part 4a-2a (latest session, VERIFIED)** adds `OceanGraph`, `CgConfig`, `ComponentSolve`, `OceanSolution` to `ocean.rs`, `Error::NoConvergence`, `tests/part4a2a.rs` (11 tests). This session had a Rust toolchain (cargo 1.97, offline, `gpu` feature stripped from `Cargo.toml` only for the sandbox build; the delivered `Cargo.toml` is unchanged). **Whole crate: all suites pass, zero warnings** (this also confirms `part4a1` (12/12; the lake-fixture fix works) and `part3c5` (7) compile and pass; the 3c-5 *benchmark* tables remain PENDING because no benchmark was run). No physics added; nothing in the pipeline reads `OceanGraph` yet.
 
@@ -64,6 +66,10 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part4a2b.rs` | Part 4a-2b: curl and beta analytic tests (10 tests, pass) |
 | `ocean_currents.rs` | `OceanCurrents` (module `ocean_currents`), `add_ocean_currents_stage`, `current_from_psi`, `coast_vectors`, `coast_outflux`, `apply_coast_slip`, `clamp_speed` (Part 4a-2c); beta term, `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (Part 4a-2d); all compiled and passing |
 | `tests/part4a2c.rs` | Part 4a-2c: gyres, linearity, coast flux, divergence, clamp (12 tests, pass; module pinned to beta off and r 5e-8 by `run_with`) |
+| `ocean_validation.rs` | `coast_hops`, `speed_report`, `SpeedReport`, `seam_spikes`, `SeamReport`, `pentagon_cells`, `cross_face_cells`, `nonzonal_fraction`, `vorticity_balance` (Part 4a-2e, NOT compiled) |
+| `tests/part4.rs` | Part 4a-2e: current stage on sphere, waterworld, plane (wall, wrap, seam shift, wall pin), cube, tidally locked sphere, real pipeline, defaults and interface (15 tests, NOT compiled) |
+| `reference/mirror_4a2e.py` | numpy mirror of the 4a-2e rules and diagnostics on sphere, plane and cube; every threshold of `tests/part4.rs` comes from it (`python mirror_4a2e.py all`) |
+| `examples/current_probe.rs` | `cargo run --release --example current_probe -- <level>`: real climate pipeline into the current stage, prints speeds, seam spike, module counters (NOT compiled) |
 | `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
 | `examples/gyre_probe.rs` | `cargo run --release --example gyre_probe -- <level> <r1> <r2> ...`: west/east peak speeds with beta off and on for the two-strip gyre world |
 | `tests/part3c4.rs` | Part 3c-4: f32 projection vs CPU f64 |
@@ -637,7 +643,7 @@ psi zero on land + ring psi small + net coast flux zero with slip + nonzero with
 
 ### Open (carry into 4a-2d)
 - **(Done in 4a-2d)** **Beta term:** `beta_on != 0` was rejected. 4a-2d needed the non-symmetric operator `r lap(psi) + beta d(psi)/dx` (directional `beta` via `north`/`east`), so BiCGSTAB or GMRES, or a symmetric split. The slip/clamp/velocity rules above carry over unchanged.
-- **Walls:** a `Wall`/`Closed` domain edge still imposes no `psi` condition and no slip (a walled plane without land lets the current pass the wall); wall normals are not stored in `Mesh`. The Dirichlet-wall option from 4a-2a is still undecided.
+- **Walls:** (decided in 4a-2e) ocean cells touching a `Wall`/`Closed` domain edge are pinned like land; see "Part 4a-2e".
 - **(Default `r_friction` settled in 4a-2d: 1e-5)** Still open: whether `H_mixed_m` should come from the `depth` field.
 - Islands carry no separate circulation (all coasts share `psi = 0`), as specified.
 
@@ -647,7 +653,7 @@ psi zero on land + ring psi small + net coast flux zero with slip + nonzero with
 
 | Module | Inputs | Outputs | Parameters (default) |
 |---|---|---|---|
-| `ocean_currents` | `stress_curl`, `beta`, `ocean_mask`, `ocean_component` | `psi`, `current` (3 layers), `current_speed`, `boundary_layer_m` (m, `r/|beta|`, 0 off-ocean and where beta = 0) | `H_mixed_m` 100, **`r_friction` 1e-5** (was 5e-8), `rho_water` 1025, `max_current` 3, **`beta_on` 1** (0 or 1; was 0 only), `coast_slip` 1 |
+| `ocean_currents` | `stress_curl`, `beta`, `ocean_mask`, `ocean_component` | `psi`, `current` (3 layers), `current_speed`, `boundary_layer_m` (m, `r/|beta|`, 0 off-ocean and where beta = 0) | `H_mixed_m` **20** (was 100 until 4a-2e), **`r_friction` 1e-5** (was 5e-8), `rho_water` 1025, `max_current` 3, **`beta_on` 1** (0 or 1; was 0 only), `coast_slip` 1 |
 
 Output-only (read with `Scheduler::module_param`, `set_param` rejects): `clamped_cells`, `max_speed_raw`, `cg_iterations` (iterations of whichever solver ran; BiCGSTAB counts full iterations = 2 matrix products), `slipped_cells`, new: `solver_kind` (0 CG, 1 BiCGSTAB), `solver_restarts`, `layer_cells_min`, `layer_cells_median`, `under_resolved_fraction`, `under_resolved` (0/1). `OceanCurrents::warning()` returns the warning text of the last run.
 
@@ -674,7 +680,7 @@ Beta off: west/east = 1.000000 at every level. Beta negated: east 0.117 vs west 
 Solver (the 4a-2d-i content): agreement with CG at zero advection (with and without shift); manufactured non-symmetric solutions on plane and sphere; edge-flux antisymmetry, exactness for linear fields on the plane, constants annihilated; 1-D Stommel layer against Thomas, west position, mirror under reversed advection; errors (`sigma`, `tol`, lengths, NaN, foreign advection) and `NoConvergence` at `max_iters = 3` (reports exactly 3 iterations), zero rhs, determinism. Physics (the 4a-2d-ii content): beta off equals an independent 4a-2c pipeline bit-for-bit (garbage `beta` ignored); `beta = 0` with `beta_on = 1` bit-identical to off; west > 2x east for all four gyres at L3-L5 (and exactly 1 with beta off); reversed beta flips it; gyre senses and N/S antisymmetry; convergence on sphere L3-L5 and cube 14/edge; f-plane symmetric vs beta-plane asymmetric; no NaN and divergence; boundary-layer report (r = width x beta exactly, equator 437 km, width in cells doubles per level), warning on/off; scheduler wiring, defaults, read-only outputs, missing and NaN `beta`; all-ocean sphere.
 
 ### Open (carry forward)
-- **Walls** still impose no `psi` condition and no slip (unchanged from 4a-2c; a walled plane with no land lets the current pass the wall).
+- **Walls** (decided in 4a-2e): pinned like land, see "Part 4a-2e".
 - **First-order upwind** smears the layer to about one cell; a second-order (limited) upwind or a finer mesh near western coasts would sharpen it. Only worth doing if the layer width matters to a later module (upwelling at western coasts).
 - **`H_mixed_m` from the `depth` field** and **islands** (separate circulation) still open. Beta-driven gyres are not yet coupled to SST (a later part).
 - Tropical equatorial dynamics (beta -> 2 Omega/R near the equator, where geostrophy fails) are not represented; the model is the Stommel gyre, not an equatorial-wave model.
@@ -683,6 +689,62 @@ Solver (the 4a-2d-i content): agreement with CG at zero advection (with and with
 
 ### Verification status (4a-2d)
 Compiled and run in the sandbox (cargo 1.97, offline, `gpu` feature stripped from a scratch copy of `Cargo.toml`; the delivered `Cargo.toml` is the original). `cargo test` passes every suite including `part4a2b` (10), `part4a2c` (12), `part4a2d` (16). No numpy mirror was written for 4a-2d: thresholds come from the Rust probe (`examples/gyre_probe.rs`) with >= 1.3x margin (the tightest: beta-plane west/east 2.6x against a 2x threshold; sphere L3 3.4x against 2x). The 3c-5 benchmark/GPU numbers remain PENDING as before.
+
+## Part 4a-2e: current validation, edge cases, tuned defaults (NOT COMPILED)
+
+**Wiring:** unchanged (`add_ocean_stage` + `add_gyre_forcing_stage` + `add_ocean_currents_stage`). Spec inputs and outputs of `ocean_currents` are unchanged.
+
+### Rules decided in 4a-2e
+- **Effective ocean** (`effective_ocean(domain, ocean, component) -> EffectiveOcean { ocean, component, graph, wall_pinned, unanchored }`): the ocean the solver, the coast slip and the velocity step actually use. Two rules, in this order:
+  1. **Wall rule.** On a `Wall` or `Closed` domain an ocean cell with `boundary_len > 0` is treated as land: `psi = 0`, `current = 0` (before 4a-2e a wall was a no-flux edge for `psi`, which let the current pass through the wall). The basin is relabelled afterwards because pinning can split it. This matches `coast_distance` (4a-1), which already counts such a cell as a coast. `Wrap` and `Void` are not pinned. Switch: module parameter `wall_pin` (default 1, 0 restores the old behaviour; `effective_ocean_with(.., false)`). Count in output-only `wall_pinned_cells`.
+  2. **Waterworld rule.** An ocean component (after rule 1) with no land-adjacent cell has no boundary condition, so the stream-function problem is singular. It gets **zero flow** (`psi = current = current_speed = 0`) and a warning containing "no land coast". Count in output-only `unanchored_cells`. This covers an all-ocean sphere, an all-ocean wrapped plane and an all-ocean Void plane. One land cell anywhere in a basin anchors it (islands carry no separate circulation: `psi = 0` on every coast).
+  Cells removed by either rule keep `ocean_mask = 1` in the field (the mask stage is untouched) but have zero current. 4a-3 must not infer a flow from the mask.
+- **Warning text:** `OceanCurrents::warning()` joins up to three sentences (waterworld, wall pin, boundary-layer resolution).
+- **Singular-solve code path is now unreachable from the module** (the `singular` handling in `OceanGraph::solve`/`solve_advective` stays for direct users and for `tests/part4a2a.rs`).
+
+### Tuned defaults and the reasoning
+`H_mixed_m` **100 -> 20** (`DEFAULT_H_MIXED_M`); `r_friction` stays **1e-5** (`DEFAULT_R_FRICTION`); `max_current` stays **3**. Speeds scale exactly as `1/H` (linear problem), so H only sets the amplitude; `r_friction` sets the boundary-layer width `r/beta` and also the amplitude. Target: 0.5 to 2 m/s in boundary currents, 0.05 to 0.2 m/s in the interior. Earth-like sphere (4 land caps, 32% land, stress `-0.1 cos(3 lat)`, 10..60 degrees; boundary = within 2 hops of the coast, interior = 3 or more hops), numpy mirror:
+| level | r_friction | H (m) | boundary peak (m/s) | interior median (m/s) |
+|---|---|---|---|---|
+| 4 | 1e-5 | 100 | 0.119 | 0.025 |
+| 4 | 1e-5 | 50 | 0.237 | 0.050 |
+| 4 | 1e-5 | **20** | **0.593** | **0.124** |
+| 4 | 1e-5 | 10 | 1.186 | 0.249 |
+| 4 | 5e-6 / 2e-5 | 20 | 1.186 / 0.288 | 0.178 / 0.078 |
+| 5 | 5e-6 / **1e-5** / 2e-5 | 20 | 1.739 / **0.867** / 0.394 | 0.178 / **0.124** / 0.078 |
+With 100 m the old default gave 0.12 to 0.17 m/s boundary currents, an order of magnitude too slow and below the target. 20 m is the thickness of the wind-driven (Ekman) layer, which is what a stress-driven transport model should use, not the 100 m thermal mixed layer; with it both ranges are met at L4 and L5 and the 3 m/s clamp stays inactive (`clamped_cells = 0`). Raising `r_friction` to 2e-5 would also satisfy the interior range but drops the L5 boundary peak below 0.5. Stress amplitude (0.1 N/m^2 test stress) was not tuned; the real pipeline's stress is not covered by the mirror (see `examples/current_probe.rs`).
+
+### Frozen interface for 4a-3 (SST) and later
+Fields 4a-3 may rely on, and only these: `psi` (1 layer, m^2/s, 0 off the effective ocean), `current` (3 layers, world-space tangent vector, m/s, 0 off the effective ocean), `current_speed` (1 layer, m/s), `ocean_mask` (0/1) and `coast_distance` (m, from the mask stage). Everything else on `ocean_currents` (`boundary_layer_m`, solver counters, `stress_curl`, `beta`) is diagnostic and may change. Parameters whose names and meaning are frozen: `H_mixed_m`, `r_friction`, `rho_water`, `max_current`, `beta_on`, `coast_slip`, `wall_pin`; output-only counters `unanchored_cells`, `wall_pinned_cells`, `clamped_cells`. Units and signs: `current` is the geostrophic-Stommel surface current, `u = k x grad(psi)`, positive `psi` = clockwise in the northern hemisphere (anticyclonic subtropical gyre).
+
+### Diagnostics (`ocean_validation.rs`), definitions
+- `coast_hops`: 0 on ocean cells that touch a non-ocean cell, +1 per ocean step; `u32::MAX` off the ocean or in a coastless basin.
+- `speed_report(.., lo, hi)`: ocean cells with `lo <= |lat| <= hi`; boundary = `hops <= 2` (peak), interior = `hops >= 3` (median).
+- `seam_spikes(.., cells, limit, floor)`: candidate evaluable when ocean, `hops >= 2`, all neighbours ocean, neighbour mean speed `>= floor`; spike `|s - mean|/mean`. Floor 0.1 m/s for pentagons (L5: 5 of 12 evaluable, worst 0.061; hexagons under the same detector reach 0.160), floor 0.15 m/s for the cube (121 of 312 seam cells evaluable, worst 0.072; non-seam cells reach 0.36). At L4 or with floor 0.05 the detector is dominated by ordinary low-speed cells (hexagons up to 0.77), so it says nothing about seams there.
+- `nonzonal_fraction`: `sum a (f - zonal mean)^2 / sum a f^2`, zonal mean per 5 degree band over the mask.
+- `vorticity_balance`: residual of `r zeta + beta v = curl/(rho H)` on cells at least 3 hops from the coast.
+
+### Test worlds and expected results (all numbers from `reference/mirror_4a2e.py`)
+| world | expected | mirror |
+|---|---|---|
+| Earth-like sphere L5 | ocean 0.678; boundary peak 0.5 to 2; interior median 0.05 to 0.2; west coasts faster than east | 0.867; 0.124; west/east mean speed 4.59 (L4 3.23); gyre psi +3.0e5 (10..40 N), -2.6e5 (S); coast flux 9e-17 |
+| waterworld (sphere, wrapped plane) | zero flow, warning, no NaN | exactly 0, `unanchored_cells` = n |
+| one island L4 | anchored, finite, no clamp | max 0.443 m/s |
+| enclosed plane ocean, wall vs wrap | identical; west peak > east | psi difference 0, west 0.308 vs east 0.179; section residual 0.062; interior divergence 1e-16 |
+| basin straddling the wrap seam vs centred | identical after a half-plane shift | 1.7e-15 |
+| ocean touching a wall vs the same ring declared land | identical | 196 pinned cells, psi difference 0, max speed 0.516 |
+| cube 14/edge, ocean over many edges | finite, every ocean face moving, no seam | 964 ocean cells, max 0.893, per face 0.89/0.48/0.49/0.46/0.42; seam worst 0.072 |
+| tidally locked sphere L4 (P = 27.3 d, non-zonal stress) | finite, balanced, non-zonal | max 0.115; curl non-zonal 0.853 (zonal control 0.008); psi non-zonal 0.603 (0.125); vorticity residual 0.136; doubling the stress doubles psi |
+
+### Verification status (4a-2e)
+**Nothing was compiled or run.** Done instead: delimiter balance on every touched file; the numpy mirror, which reproduces the numbers quoted in the earlier (lost) session's test comments (Earth-like L5 0.867 / 0.124 / 4.59, one island 0.443, plane 0.308 / 0.179, cube 964 cells and 0.893, tidal 0.115 and psi non-zonal 0.603 / 0.125); a manual API check of every call in `tests/part4.rs` against the source. Known weak spots to look at first if something fails: (1) `tests/part4.rs::the_real_climate_pipeline_drives_the_current_stage...` has no mirror and asserts only structure (finite, zero on land, deterministic, ocean fraction 0.5 to 0.9); (2) the mirror solves the beta system with a direct sparse solve while Rust uses BiCGSTAB at 1e-10, so differences of that order are expected; (3) `vorticity_balance` counts cells 3 hops from the coast: the lost session's mirror counted 1290 cells (probably coast = hop 1), this one 1056; the test only requires more than 500; (4) the 4a-2c and 4a-2d suites are touched (see above) and must be re-run.
+The `part4.rs` pipeline test and `current_probe` are the only places where the real wind stress is used.
+
+### Open (carry forward)
+- No circulation around islands (every coast has `psi = 0`), no mixed-layer depth variation (`H_mixed_m` is one number; taking it from `depth` is still open), no tides, no equatorial dynamics, full recompute only (`DirtyRegion` ignored).
+- A waterworld has zero flow instead of the thermohaline/wind-driven circulation it would really have; a later part (thermohaline, 4a-3 or 4b) should replace the zero. The warning text says so.
+- Pinned wall cells and the 4a-1 mask disagree about `ocean_mask` (still 1); if a later module needs the effective ocean it must call `effective_ocean` or read `current_speed > 0`.
+- The seam detector is a relative-spike heuristic and only meaningful at L5+ / cube 14+ with a floor; a stricter seam test would compare against a manufactured smooth field.
 
 ## Parameters from Part 1
 
