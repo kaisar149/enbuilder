@@ -1,4 +1,6 @@
-# ARCHITECTURE.md (after PART 4a-4: upwelling, thermohaline, sea ice, nutrients; 4a-4 VERIFIED, written without a Rust toolchain; 4a-3 and older VERIFIED)
+# ARCHITECTURE.md (after PART 4b-1: depression handling, flow direction, drainage area; 4b-1 UNVERIFIED, written without a Rust toolchain; 4a-4 and older as recorded below)
+
+**Part 4b-1 (latest session, VERIFIED: COMPILED)** adds `src/flow_routing.rs` (module `flow_routing`, pure functions `priority_flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, wiring `add_flow_routing_module` / `add_flow_routing_stage`), `tests/part4b1.rs` (11 tests), `reference/mirror_4b1.py` and `reference/mirror_4b1_cases.py` (both pass). `lib.rs` gained `pub mod flow_routing;` and one `pub use`. **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4b1`, then `cargo test`, and send back the compiler output.** See "Part 4b-1". (Whether 4a-4's `tests/part4a4.rs` was run on your machine is not recorded here; the 4a-4 note below still says UNVERIFIED for the cold-current-dry-coast test.)
 
 **Part 4a-4 (latest session, VERIFIED: COMPILED)** adds `src/ocean_secondary.rs` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients` and the wiring `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full`), `AlbedoModel::with_sea_ice()` and `add_energy_stage_ocean_flux_with(s, sea_ice)` in `energy.rs`, `OceanHeat::with_thermohaline()` in `ocean_heat.rs` (and `t_freeze` default 271.35 -> 150), `tests/part4a4.rs` (15 tests), `reference/mirror_4a4.py` (passes). **The sandbox had no Rust toolchain and no network: please run `cargo test --test part4a4`, then `cargo test`, and send back the compiler output.** The ocean stage is NOT yet closed: see "Part 4a-4" for what is unverified, including the cold-current-dry-coast acceptance test which is only a diagnostic probe so far.
 
@@ -76,6 +78,9 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `reference/mirror_4a2e.py` | numpy mirror of the 4a-2e rules and diagnostics on sphere, plane and cube; every threshold of `tests/part4.rs` comes from it (`python mirror_4a2e.py all`) |
 | `examples/current_probe.rs` | `cargo run --release --example current_probe -- <level>`: real climate pipeline into the current stage, prints speeds, seam spike, module counters (NOT compiled) |
 | `ocean_secondary.rs` | `Upwelling`, `Thermohaline`, `SeaIce`, `Nutrients` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients`), `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full` (Part 4a-4, NOT compiled) |
+| `flow_routing.rs` | `FlowRouting` (module `flow_routing`), `priority_flood`, `Flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, `add_flow_routing_module`, `add_flow_routing_stage` (Part 4b-1, NOT compiled) |
+| `tests/part4b1.rs` | Part 4b-1: invariants on sphere, cube, walled/wrapped plane, disc; hand-built bowl, plateau, pit, slope; Void vs Wall; closed world sink; all-land and all-ocean spheres; determinism; interface (11 tests, NOT compiled) |
+| `reference/mirror_4b1.py`, `mirror_4b1_cases.py` | python mirror of the flood, steepest descent and accumulation; checks the filled surface against an independent Planchon-Darboux fill and holds the hand-built expectations (`python mirror_4b1.py`) |
 | `ocean_heat.rs` | `OceanHeat` (module `ocean_heat`), `mask_flux`, `project_ocean_flux`, `transport_tendency`, `seed_ocean_heat_flux`, `add_ocean_climate_loop`, `add_atmosphere_ocean_pipeline`, `run_ocean_climate`, `OceanClimateReport`, `DEFAULT_MIXED_LAYER_HEAT_CAPACITY`, `DEFAULT_SST_RELAX_S` (Part 4a-3, compiled and passing) |
 | `tests/part4a3.rs` | Part 4a-3: plane analytic lag/damping, uniform tracer, flux closure, western warm boundary, bit-identical backwards compatibility, cold/warm coast response, loop convergence, interface, real pipeline with outer coupling (9 tests, pass) |
 | `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
@@ -841,6 +846,43 @@ Coastal upwelling on a walled plane, both signs of `f`, west and east coasts, ex
 - Sea ice does not insulate or release latent heat; no brine rejection; thermohaline flux is a nudge, not an overturning; `sst`-based density is not used (atmosphere T instead).
 - Equatorial upwelling (`|f| < f_floor`) is not modelled. Coastal upwelling is a cell-mean quantity, so it scales with 1/cell size; it should be capped by an offshore width on very fine meshes.
 
+## Part 4b-1: depression handling, flow direction, drainage area (UNVERIFIED: written without a Rust toolchain)
+
+Wiring: `add_flow_routing_stage(&mut s)` registers `sea_level`, `ocean_mask`, `flow_routing` (needs only `elevation`). Where the ocean stage is already registered (`add_ocean_stage`, the full pipeline) use `add_flow_routing_module(&mut s)` instead (two registrations of `ocean_mask` give `DuplicateModule`). The scheduler orders `sea_level -> ocean_mask -> flow_routing`. Nothing feeds back; no rivers, no lakes (4b-2).
+
+| Module | Inputs | Outputs | Parameters (default) |
+|---|---|---|---|
+| `flow_routing` | `elevation`, `ocean_mask` | `elevation_filled` (m), `depression_depth` (m, >= 0), `flow_dir` (receiver cell index as f64, -1 = root), `flow_order` (cell indices, uphill -> downhill), `drainage_area` (m^2) | `void_outflow` 1 (0/1), `require_outlet` 0 (0/1). Output-only: `n_outlets`, `n_void_outlets`, `n_sinks`, `n_depression_cells`, `max_depression_depth_m` |
+
+### Decisions (record)
+- **Outlets** (`flow_dir = -1`): every `ocean_mask == 1` cell; every cell with `boundary_len > 0` when `domain.boundary == Void` (the waterfall; this replaces the Part 1 note that Void behaves as Wall, for routing only; switch `void_outflow = 0` restores wall behaviour); `Wall`/`Closed` stay closed; `Wrap` has no edge. Ocean-mask lakes (small below-sea-level components) are NOT outlets: they are ordinary depressions here.
+- **Routing height** is `elevation` only, not geopotential (cube worlds: the face-centre/edge potential difference is ignored; open decision 0c still stands).
+- **Priority-flood** (Barnes style, no epsilon): heap key `(filled height, hops along the plateau, cell index)`, smallest first. A neighbour with `z <= filled(current)` gets `filled(current)` and `hops + 1`; otherwise its own `z` and `hops = 0`. Flats and filled depressions are therefore resolved breadth-first from their spill point, not by cell index. `elevation_filled` is the exact fill (no epsilon residue, `depression_depth` is exactly 0 outside depressions); equals an independent Planchon-Darboux fill in the mirror.
+- **`flow_dir`**: steepest descent (drop / `edge_dist`) among neighbours with strictly lower FILLED height, ties to the lower neighbour index; on a flat (no strictly lower neighbour) the flood parent. A strictly lower filled height was popped earlier, and the parent was popped earlier, so the receiver chain strictly decreases in (filled, pop rank): no cycles by construction.
+- **`flow_order`**: reverse pop order, all `n_cells` cells (ocean cells at the downhill end). Layout is `data[k] = cell index` (a permutation, NOT a per-cell value). Every cell precedes its receiver.
+- **`drainage_area`** counts LAND area only (`ocean_mask == 0`, lakes included): `drainage_area[c]` = land area of `c` plus everything upstream. An ocean outlet holds the land area draining into it; the sum over all roots equals the total land area exactly (the "total over outlets = total land area" test).
+- **No outlet** (closed Wall world, or a mesh component with none): the lowest cell of that component (ties: lowest index) becomes a terminal sink, `flow_dir = -1`, counted in `n_sinks`; the whole component then drains to it. `require_outlet = 1` makes `run` return `Error::InvalidParam` instead. Never a hang.
+- Full recompute (ignores `DirtyRegion`). Fields stay f64; `flow_dir` and `flow_order` store indices as f64 (exact below 2^53).
+
+### Pure API
+`priority_flood(&Mesh, &[f64], &[bool]) -> Result<Flood{filled, parent, pop_order, root, sinks}>`, `flow_directions(&Mesh, &Flood) -> Vec<i32>`, `flow_order(&Flood) -> Vec<u32>`, `accumulate_area(&Mesh, &[i32], &[u32], &[bool]) -> Vec<f64>`, `root_of(&[i32], &[u32]) -> Vec<i32>` (the outlet or sink each cell drains to; basin id for 4b-2), `outlet_mask(&Domain, &[bool], bool) -> Vec<bool>`.
+
+### Mirror results (`reference/mirror_4b1.py`, jittered ramp terrain, same formula as `terrain()` in the tests)
+All pass, filled surface identical to Planchon-Darboux (|diff| = 0): sphere L4 2562 cells, 257 depression cells, max depth 151 m, longest path 35; cube 14 (1176 cells) 173 depression cells, longest path 31; walled plane 40x24: 189, 33; wrapped plane: 170, 30; Void plane (all land): 124 outlets (the perimeter), 291 depression cells, longest path 56; closed all-land plane: 1 sink, whole area drains to it. Rust tests assert only invariants and the hand-built numbers, not these counts.
+
+### Tests (`tests/part4b1.rs`, 11)
+Invariants (`check_routing`: roots are exactly ocean/Void/sinks, receivers are neighbours and not uphill, no cycles, filled >= z and equal to an independent fill, flow_order permutation and topological, independent drainage accumulation, roots sum to land area) on sphere, cube, walled plane, wrapped plane, disc; hand-built bowl (fills to the lowest rim, depth 40 m, spills west, neighbours drain into it); plateau (path length = column index, so flats resolve breadth-first); sub-sea-level pit that is not ocean; tilted plane; Void vs Wall vs `void_outflow = 0`; closed world (one sink at the lowest cell, `require_outlet` error); all-land sphere; all-ocean sphere; determinism and pure functions equal the module; bad inputs and interface.
+
+### Verification status (4b-1)
+No Rust toolchain, no network: **not compiled, tests not run**. Only a delimiter-balance check of both Rust files and the python mirrors (which do run). Expect small compile errors; run `cargo test --test part4b1`, then `cargo test`, and send the output back.
+
+### Open (carry into 4b-2)
+- Lakes: `depression_depth > 0` cells are the lake candidates; spill cell = the cell where a filled basin's `flow_dir` leaves the plateau. 4b-2 must turn them into water bodies and decide the lake/ocean boundary for large basins below sea level.
+- Rivers: threshold on `drainage_area` (or on discharge from `precipitation`); `root_of` gives basin ids.
+- Endorheic sinks inside a world that also has outlets are not created (every component with an outlet drains to it); terminal lakes in closed basins come from depressions only.
+- Incremental update for edits (dirty region) is not implemented; routing is full-recompute O(n log n).
+- Void rule is now routing-only: ocean currents and moisture still treat Void as Wall.
+
 ## Parameters from Part 1
 
 Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, boundary, surface_gravity, seed. Test modules: `diffusivity`, `steps`, `target`, `gain`, `value`. No physical field names are reserved yet.
@@ -874,6 +916,7 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 6. Whether `boundary_len` should also carry boundary kind per edge (needed once wrap and wall mix on one mesh).
 
 ## Verification status
+- Part 4b-1: written without a Rust toolchain; not compiled, tests not run; python mirrors pass (see "Part 4b-1").
 - Part 1: compiled and all tests passing (reported by the project owner).
 - Part 2 compiled and its 15 tests pass (confirmed in sandbox this session).
 - Part 3a compiled and its 10 tests pass. Static check: balanced delimiters in `gradient.rs`, `pressure.rs`, `wind.rs`, `tests/part3.rs`. Expect to fix small type/borrow errors on first `cargo test`; please send the compiler output back.
