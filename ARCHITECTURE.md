@@ -1,6 +1,8 @@
-# ARCHITECTURE.md (after PART 4a-2e: current validation, wall and waterworld rules, tuned defaults; 4a-2e is WRITTEN BUT NOT COMPILED, 4a-2b to 4a-2d compiled and passing)
+# ARCHITECTURE.md (after PART 4a-3: ocean heat transport and the SST feedback; 4a-3 VERIFIED, whole crate green)
 
-**Part 4a-2e (latest session, UNVERIFIED: not compiled)** adds `src/ocean_validation.rs` (pure diagnostics), `effective_ocean` / `effective_ocean_with` / `EffectiveOcean` / `DEFAULT_H_MIXED_M` in `ocean_currents.rs`, output-only params `unanchored_cells`, `wall_pinned_cells` and the switch `wall_pin` on `ocean_currents`, `tests/part4.rs` (the 4a-2e acceptance suite), `reference/mirror_4a2e.py`, `examples/current_probe.rs`. Behaviour changes: **`H_mixed_m` default 100 -> 20**, a **waterworld basin gets zero flow** (it used to be solved as a singular problem), **ocean cells touching a Wall/Closed domain edge are pinned like land**. Touched older tests: `tests/part4a2c.rs` (`run_with` pins `H_mixed_m = 100`; the defaults test expects 20), `tests/part4a2d.rs` (`run` pins `H_mixed_m = 100`; the all-ocean-sphere test expects `solver_kind` 0 and `unanchored_cells` = n). **This session had no Rust toolchain and no network (cargo absent), so nothing was compiled or run.** Please run `cargo test --test part4`, then `cargo test`, and send back the compiler output. See "Part 4a-2e".
+**Part 4a-3 (latest session, VERIFIED)** adds `src/ocean_heat.rs` (module `ocean_heat`, `run_ocean_climate`, wiring helpers), `EnergyBalance::with_ocean_heat()` and `add_energy_stage_ocean_flux` in `energy.rs`, `tests/part4a3.rs` (9 tests). Built with cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is the original). **Whole crate: every suite passes, no new warnings.** This session also **verified 4a-2e**: it compiled as written and `tests/part4.rs` (15) and every older suite pass, so the "NOT COMPILED" wording in the 4a-2e section below is obsolete. See "Part 4a-3".
+
+**Part 4a-2e (previous session, now VERIFIED, see above)** adds `src/ocean_validation.rs` (pure diagnostics), `effective_ocean` / `effective_ocean_with` / `EffectiveOcean` / `DEFAULT_H_MIXED_M` in `ocean_currents.rs`, output-only params `unanchored_cells`, `wall_pinned_cells` and the switch `wall_pin` on `ocean_currents`, `tests/part4.rs` (the 4a-2e acceptance suite), `reference/mirror_4a2e.py`, `examples/current_probe.rs`. Behaviour changes: **`H_mixed_m` default 100 -> 20**, a **waterworld basin gets zero flow** (it used to be solved as a singular problem), **ocean cells touching a Wall/Closed domain edge are pinned like land**. Touched older tests: `tests/part4a2c.rs` (`run_with` pins `H_mixed_m = 100`; the defaults test expects 20), `tests/part4a2d.rs` (`run` pins `H_mixed_m = 100`; the all-ocean-sphere test expects `solver_kind` 0 and `unanchored_cells` = n). **This session had no Rust toolchain and no network (cargo absent), so nothing was compiled or run.** Please run `cargo test --test part4`, then `cargo test`, and send back the compiler output. See "Part 4a-2e".
 
 **Part 4a-2d (previous session, VERIFIED)** adds to `ocean.rs`: `OceanAdvection`, `OceanGraph::advection`, `OceanGraph::solve_advective` (Jacobi-preconditioned BiCGSTAB), `ComponentSolve.restarts`; to `ocean_currents.rs`: the beta term (`beta_on` default 1), `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (now 1e-5), new input `beta`, new output `boundary_layer_m`; `tests/part4a2d.rs` (16 tests), `examples/gyre_probe.rs`. This session had cargo 1.97 offline (`gpu` feature stripped from `Cargo.toml` for the sandbox build only; the delivered `Cargo.toml` is unchanged). **Whole crate: every suite passes, zero warnings from the new code.** This also confirms that the previously UNVERIFIED 4a-2b (10 tests) and 4a-2c (12 tests) compile and pass as written (4a-2c needed only test edits for the new defaults, see "Part 4a-2d"). See "Part 4a-2d".
 
@@ -70,6 +72,8 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `tests/part4.rs` | Part 4a-2e: current stage on sphere, waterworld, plane (wall, wrap, seam shift, wall pin), cube, tidally locked sphere, real pipeline, defaults and interface (15 tests, NOT compiled) |
 | `reference/mirror_4a2e.py` | numpy mirror of the 4a-2e rules and diagnostics on sphere, plane and cube; every threshold of `tests/part4.rs` comes from it (`python mirror_4a2e.py all`) |
 | `examples/current_probe.rs` | `cargo run --release --example current_probe -- <level>`: real climate pipeline into the current stage, prints speeds, seam spike, module counters (NOT compiled) |
+| `ocean_heat.rs` | `OceanHeat` (module `ocean_heat`), `mask_flux`, `project_ocean_flux`, `transport_tendency`, `seed_ocean_heat_flux`, `add_ocean_climate_loop`, `add_atmosphere_ocean_pipeline`, `run_ocean_climate`, `OceanClimateReport`, `DEFAULT_MIXED_LAYER_HEAT_CAPACITY`, `DEFAULT_SST_RELAX_S` (Part 4a-3, compiled and passing) |
+| `tests/part4a3.rs` | Part 4a-3: plane analytic lag/damping, uniform tracer, flux closure, western warm boundary, bit-identical backwards compatibility, cold/warm coast response, loop convergence, interface, real pipeline with outer coupling (9 tests, pass) |
 | `tests/part4a2d.rs` | Part 4a-2d: BiCGSTAB on synthetic non-symmetric problems, beta term, western intensification, resolution warning (16 tests, pass) |
 | `examples/gyre_probe.rs` | `cargo run --release --example gyre_probe -- <level> <r1> <r2> ...`: west/east peak speeds with beta off and on for the two-strip gyre world |
 | `tests/part3c4.rs` | Part 3c-4: f32 projection vs CPU f64 |
@@ -745,6 +749,54 @@ The `part4.rs` pipeline test and `current_probe` are the only places where the r
 - A waterworld has zero flow instead of the thermohaline/wind-driven circulation it would really have; a later part (thermohaline, 4a-3 or 4b) should replace the zero. The warning text says so.
 - Pinned wall cells and the 4a-1 mask disagree about `ocean_mask` (still 1); if a later module needs the effective ocean it must call `effective_ocean` or read `current_speed > 0`.
 - The seam detector is a relative-spike heuristic and only meaningful at L5+ / cube 14+ with a floor; a stricter seam test would compare against a manufactured smooth field.
+
+## Part 4a-3: ocean heat transport and the SST feedback (VERIFIED)
+
+### Decisions (record)
+1. **`ocean_heat` writes `ocean_heat_flux`; `energy_balance` reads it (PART file's recommended option).** The scheduler allows one producer per field, so SST cannot overwrite `temperature`. `ocean_heat_flux` (W/m^2 per cell, positive heats the atmosphere, 0 off the ocean) enters the energy balance residual as `+ A * flux`. `EnergyBalance::with_ocean_heat()` declares the extra input (specs are fixed at construction, same pattern as 3b-3); `EnergyBalance::new()` is unchanged. **With a zero flux the result is bit-identical to `new()`** (tested through the whole `ice_albedo` loop).
+2. **DEVIATION: the loop `[ocean_currents, ocean_heat, energy_balance]` cannot exist in one scheduler.** (a) `energy_balance` is already a member of `ice_albedo` and a module may be in one loop only; (b) even with that fixed, `temperature` feeds pressure -> wind -> `wind_stress` -> curl -> `ocean_currents`, so a loop containing `ocean_currents` and `energy_balance` while pressure and wind stay outside makes a cycle through the loop node (`Error::Cycle`). Chosen design: **two schedulers and a driver.**
+   * Scheduler A (`add_atmosphere_ocean_pipeline`): `insolation`, `albedo`, `energy_balance` (ocean-flux variant), loop `ice_albedo`, `pressure`, `wind`, `moisture_source`, `moisture_transport`, `ocean_mask` stack, gyre forcing, `ocean_currents`.
+   * Scheduler B (`add_ocean_climate_loop`): `insolation`, `albedo`, `ocean_heat`, `energy_balance` (ocean-flux variant); loop **`ocean_climate`** = `[albedo, ocean_heat, energy_balance]`, watch `[temperature_sl, temperature, sst]`, relaxation 0.5, tolerance 2e-3, max 30 passes. `current` and `ocean_mask` come from A through the FieldStore. `ocean_currents` is NOT a member: it does not read any temperature, so re-running it inside the loop would change nothing.
+   * `run_ocean_climate(domain, fields, &mut A, &mut B, season, outer_passes)`: A then B; with `outer_passes > 1` it repeats A, B so wind, stress and currents see the SST-corrected temperature (a Picard iteration over the one cycle the scheduler cannot hold). Returns `OceanClimateReport {heat_loop_passes, heat_loop_converged, ice_loop_passes, sst_change_k}`. Call `seed_temperature` first; the driver seeds a zero `ocean_heat_flux` itself.
+3. **Projection IS needed (PART file said it was not).** The masked edge flux `edge_flux(current)` has a relative raw divergence of about **0.13** on the Earth-like L3 world (`div_raw_rel`; the stream function is divergence-free as a continuous field, not as the face-averaged edge flux, and masking land edges adds coast leakage). A uniform tracer would otherwise acquire sources. `ocean_heat` therefore projects the masked flux on the **ocean subgraph** (Jacobi-CG, tolerance 1e-12, own function `project_ocean_flux`, parameter `project` default 1). With it, a uniform atmosphere gives a uniform SST (error < 1e-6 K) and zero flux (< 1e-3 W/m^2). The 3b-2 `project_flux` was not reusable because it works on the whole mesh (land edges would carry flux).
+4. **The flux is the transport convergence, not the air-sea term.** `ocean_heat_flux = C * tend`, with `tend` (K/s) the conservative upwind plus diffusion tendency on the final SST. It is a sum of antisymmetric edge fluxes, so `sum(A * flux) = 0` at any state, converged or not (measured 2e-9 W of 5e15 W). At steady state it equals the air-sea exchange `C (T - T_atm)/tau`; output-only `air_sea_mismatch` reports the gap (3.5e-5 relative on L4).
+5. `depth` is NOT read (the PART file lists it): the first version uses one uniform heat capacity; shallow-sea reduction of the mixed layer is open. `ocean_component` is not read either: the heat domain is the plain `ocean_mask` (pinned wall cells and waterworld cells have zero current but still relax to the atmosphere), so 4a-2e's "do not infer flow from the mask" is respected because the current field itself is read.
+
+### Module `ocean_heat`
+Inputs `temperature_sl`, `current` (3 layers), `ocean_mask`. Outputs `sst` (K, 0 off the ocean, floored at `t_freeze` for output only), `ocean_heat_flux` (W/m^2). Anomaly hook name: `sea_temperature_source` (not used yet).
+| Parameter | Default | Meaning |
+|---|---|---|
+| mixed_layer_heat_capacity | 8.1795e7 J/m^2/K (rho 1025 x cp 3990 x H 20 m) | `C = rho cp H`; same 20 m layer as the current stage. Flux is exactly linear in it; the steady SST is independent of it |
+| sst_relax_s | 5e6 | SST relaxation toward the atmosphere (s); with the default C this is 16 W/m^2/K air-sea coupling |
+| diffusivity | 1000 m^2/s | lateral two-point diffusion on ocean-ocean edges (zero is allowed) |
+| cfl | 0.5 | explicit sub-step = cfl / max cell outflow rate (advection + diffusion + 1/tau) |
+| max_steps / steady_tol_k | 200000 / 1e-5 K | stop when the largest per-step change is below the tolerance; hitting `max_steps` returns `Error::NoConvergence` (never an unconverged field) |
+| project | 1 | project the masked flux on the ocean subgraph (0 = off, only for tests) |
+| t_freeze | 271.35 K | lower bound of the reported `sst` (sea ice is not modelled here) |
+| warm_start | 1 | start from an existing `sst` (ocean cells > 0), else from `temperature_sl` |
+Output-only (set by `run`, rejected by `set_param`): `last_steps`, `last_residual_k`, `flux_closure` (`|sum A Q| / sum A|Q|`), `div_raw_rel`, `air_sea_mismatch`, `ocean_cells`.
+Pure functions: `mask_flux`, `project_ocean_flux(domain, ocean, &mut flux, tol, max_iters) -> (raw_div_rel, iters)`, `transport_tendency(domain, flux, dk, T, &mut out)`.
+
+### Measured (tests/part4a3.rs, release)
+| Test world | Result |
+|---|---|
+| Wrapped plane 100x4, uniform u = 0.01 m/s, `Tatm = 285 + 5 sin(kx)`, kappa 0 (s = u k tau = 0.314) | analytic amplitude 4.770 K, phase lag atan(s); worst error 0.0445 K (< 0.06 x amplitude; first-order upwind diffusion), 215 steps |
+| Earth-like caps L4, analytic `T = 300 - 40 sin^2 lat` | max `|Q|` 82.5 W/m^2, `sum A Q` = -2.1 W of 5.08e15 W, 177 steps, air-sea mismatch 3.5e-5 |
+| Same, L5, 25..55 degrees | west-coast ocean cells (57): SST anomaly +3.14 K, poleward speed +0.215 m/s; east-coast (49): -1.00 K, -0.035 m/s |
+| Coupled loop `ocean_climate`, L4 caps world, analytic currents | converges in **10 passes** (residual 1.55e-3 < 2e-3) |
+| Land 20..55 degrees, with vs without transport | whole band +0.99 K (poleward heat transport + less ice + convexity of emission); beside warm (western) currents +1.69 K, beside cold (eastern) currents +0.43 K, i.e. **-0.56 K and +0.70 K relative to the band** |
+| Real pipeline, `earth_like_world(3)`, `run_ocean_climate(.., 2)` | loop passes [6, 1], converged both; ice loop passes [13, 1]; SST change between outer passes 0.43 K |
+
+### Tests (`tests/part4a3.rs`, 9)
+Plane analytic; uniform atmosphere keeps SST uniform with zero flux and a still ocean gives SST = atmosphere; flux closure, steadiness and exact linearity in C; warm western boundary (sense of the current and SST); bit-identical backwards compatibility through the `ice_albedo` loop; cold/warm coast response relative to the band; loop convergence and determinism on L4; parameters, spec, output-only rejection, missing input, no-ocean case; the real pipeline with two outer passes.
+The PART file's "a cold coast current lowers local `temperature` on the adjacent land" holds **relative to the band response** (-0.56 K), not in absolute terms (+0.43 K), because transporting heat poleward warms the whole mid-latitude band.
+
+### Open (carry forward)
+- Outer coupling: with `outer_passes = 1` the winds and currents come from the climate WITHOUT ocean heat; the second pass changes SST by about 0.4 K at L3. Whether to make 2 the default is not decided.
+- No sea ice insulation or freezing release (SST is only floored); no depth-limited mixed layer; one heat capacity; no upwelling or thermohaline term; waterworlds still have zero current, hence zero heat transport (4a-2e open item stands).
+- Heat transport uses the 4a-2c current, which is a layer-mean over the 20 m Ekman layer. Magnitudes (max about 80 W/m^2) are plausible but untuned.
+- `ocean_heat_flux` is not yet re-evaluated by the incremental/`DirtyRegion` machinery (full recompute only).
+- The seasonal inertia of SST (Part 3b-4 open issue 1) is still absent: `ocean_heat` is a steady state per season.
 
 ## Parameters from Part 1
 

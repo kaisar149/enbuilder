@@ -113,6 +113,8 @@ const EB_PARAMS: [(&str, f64); 9] = [
 pub struct EnergyBalance {
     params: ParamSet,
     insolation_field: String,
+    /// Part 4a-3: when true the module also reads `ocean_heat_flux` (W/m^2, positive = heats the atmosphere).
+    ocean_flux: bool,
 }
 
 impl Default for EnergyBalance {
@@ -125,7 +127,15 @@ impl EnergyBalance {
         for (k, v) in EB_PARAMS.iter() {
             params.set(k, *v);
         }
-        EnergyBalance { params, insolation_field: "insolation".into() }
+        EnergyBalance { params, insolation_field: "insolation".into(), ocean_flux: false }
+    }
+    /// Part 4a-3 variant: declares the extra input `ocean_heat_flux` (W/m^2 per cell, area integral zero) and adds it to the
+    /// balance. Module specs are fixed at construction, so this is a constructor and not a parameter (same pattern as 3b-3).
+    /// With the field identically zero the result is bit-identical to `new()`.
+    pub fn with_ocean_heat() -> Self {
+        let mut m = Self::new();
+        m.ocean_flux = true;
+        m
     }
     /// Use another insolation field, e.g. "insolation_annual".
     pub fn with_insolation_field(mut self, name: &str) -> Self {
@@ -186,7 +196,13 @@ impl Module for EnergyBalance {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "energy_balance".into(),
-            inputs: vec![self.insolation_field.clone(), "albedo".into(), "elevation".into()],
+            inputs: {
+                let mut v = vec![self.insolation_field.clone(), "albedo".into(), "elevation".into()];
+                if self.ocean_flux {
+                    v.push("ocean_heat_flux".into());
+                }
+                v
+            },
             outputs: vec!["temperature_sl".into(), "temperature".into()],
             anomaly_hooks: vec!["temperature_source".into(), "greenhouse".into()],
         }
@@ -215,6 +231,15 @@ impl Module for EnergyBalance {
         let q_in = fields.data(&self.insolation_field)?.to_vec();
         let alb = fields.data("albedo")?.to_vec();
         let elev = fields.data("elevation")?.to_vec();
+        let q_ocean: Option<Vec<f64>> = if self.ocean_flux {
+            let q = fields.data("ocean_heat_flux")?;
+            if q.len() != n || q.iter().any(|v| !v.is_finite()) {
+                return Err(Error::InvalidParam("energy_balance: 'ocean_heat_flux' must be 1 finite layer".into()));
+            }
+            Some(q.to_vec())
+        } else {
+            None
+        };
 
         let atm = domain.media.atmosphere.as_ref();
         let eps = if atm.is_some() { 1.0 - p("greenhouse") } else { 1.0 };
@@ -247,7 +272,8 @@ impl Module for EnergyBalance {
                     lap += w[q] * (t[mesh.adj[q] as usize] - t[i]);
                 }
                 let t3 = t[i] * t[i] * t[i];
-                resid[i] = mesh.area[i] * ((1.0 - alb[i]) * q_in[i] - eps * SIGMA * t3 * t[i]) + kt * lap;
+                let heat = q_ocean.as_ref().map_or(0.0, |q| q[i]);
+                resid[i] = mesh.area[i] * ((1.0 - alb[i]) * q_in[i] - eps * SIGMA * t3 * t[i] + heat) + kt * lap;
                 diag[i] = mesh.area[i] * 4.0 * eps * SIGMA * t3 + kt * wsum[i];
             }
             let dt = cg(mesh, &w, kt, &diag, &resid, p("cg_tol"), p("cg_max_iters") as usize);
@@ -287,6 +313,21 @@ pub fn add_energy_stage_with(s: &mut Scheduler, insolation: Insolation) -> Resul
     s.register(Box::new(insolation))?;
     s.register(Box::new(AlbedoModel::new()))?;
     s.register(Box::new(EnergyBalance::new()))?;
+    s.add_feedback_loop(
+        FeedbackLoop::new("ice_albedo", &["albedo", "energy_balance"])
+            .watch(&["temperature_sl", "temperature"])
+            .relaxation(0.5)
+            .tolerance(2e-3)
+            .max_iters(50),
+    )
+}
+
+/// Part 4a-3: like `add_energy_stage` but the energy balance is the `with_ocean_heat` variant, so it needs the field
+/// `ocean_heat_flux` to exist (see `ocean_heat::seed_ocean_heat_flux`). Same `ice_albedo` loop.
+pub fn add_energy_stage_ocean_flux(s: &mut Scheduler) -> Result<()> {
+    s.register(Box::new(Insolation::new()))?;
+    s.register(Box::new(AlbedoModel::new()))?;
+    s.register(Box::new(EnergyBalance::with_ocean_heat()))?;
     s.add_feedback_loop(
         FeedbackLoop::new("ice_albedo", &["albedo", "energy_balance"])
             .watch(&["temperature_sl", "temperature"])
