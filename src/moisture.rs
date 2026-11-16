@@ -30,7 +30,12 @@ const PARAMS: [(&str, f64); 7] = [
     ("max_evap", 1.0e-4),           // kg/m^2/s (~8.6 mm/day)
 ];
 
-pub struct MoistureSource { params: ParamSet }
+/// Extra parameter of the Part 4b-3 variant (`MoistureSource::with_land_state`).
+const LAND_PARAMS: [(&str, f64); 1] = [
+    ("sublimation_coeff", 0.1), // fraction of the open-water rate that snow/ice cover sublimates (small by design)
+];
+
+pub struct MoistureSource { params: ParamSet, land: bool }
 
 impl Default for MoistureSource {
     fn default() -> Self { Self::new() }
@@ -42,26 +47,84 @@ impl MoistureSource {
         for (k, v) in PARAMS.iter() {
             params.set(k, *v);
         }
-        MoistureSource { params }
+        MoistureSource { params, land: false }
+    }
+
+    /// Part 4b-3 variant: land evaporation is limited by the soil-moisture state and snow/ice sublimates.
+    /// Reads the land fields `land_availability` (0..1), `soil_evap_cap` and `sublimation_cap` (kg/m^2/s),
+    /// `snow_cover` (0..1) written by `land_supply`, and `ocean_mask` (ocean = open water, everything else is land).
+    /// Writes `evaporation` and `evaporation_sublimation` (the part of `evaporation` that comes from snow and ice).
+    /// The constant parameter `land_availability` is NOT used by this variant (the field is). Module name stays `moisture_source`.
+    pub fn with_land_state() -> Self {
+        let mut m = Self::new();
+        for (k, v) in LAND_PARAMS.iter() {
+            m.params.set(k, *v);
+        }
+        m.land = true;
+        m
+    }
+
+    fn run_land(&self, domain: &Domain, fields: &mut FieldStore) -> Result<()> {
+        let p = |k: &str| self.params.get_or(k, 0.0);
+        let n = domain.n_cells();
+        let t = fields.data("temperature")?.to_vec();
+        let ice = fields.data("ice_fraction")?.to_vec();
+        let w = fields.data("wind_speed")?.to_vec();
+        let ocean = fields.data("ocean_mask")?.to_vec();
+        let avail = fields.data("land_availability")?.to_vec();
+        let soil_cap = fields.data("soil_evap_cap")?.to_vec();
+        let sub_cap = fields.data("sublimation_cap")?.to_vec();
+        let cover = fields.data("snow_cover")?.to_vec();
+        let (k, rh) = (p("k_ocean"), p("relative_humidity_ref"));
+        let (wb, wc, cap, sc) = (p("wind_base"), p("wind_coeff"), p("max_evap"), p("sublimation_coeff"));
+        let mut e = vec![0.0; n];
+        let mut es = vec![0.0; n];
+        for i in 0..n {
+            let sat = saturation_vapour_pressure(t[i]);
+            let f = (wb + wc * w[i].max(0.0)).max(0.0);
+            let pot = k * sat * (1.0 - rh) * f; // open-water rate, before ice and availability
+            let open = (1.0 - ice[i]).clamp(0.0, 1.0);
+            if ocean[i] > 0.5 {
+                e[i] = (pot * open).clamp(0.0, cap);
+            } else {
+                let a = avail[i].clamp(0.0, 1.0);
+                let liq = (a * pot * open).clamp(0.0, cap).min(soil_cap[i].max(0.0));
+                let sub = (sc * cover[i].clamp(0.0, 1.0) * pot).min(sub_cap[i].max(0.0)).min(cap - liq).max(0.0);
+                e[i] = liq + sub;
+                es[i] = sub;
+            }
+        }
+        fields.put("evaporation", 1, e)?;
+        fields.put("evaporation_sublimation", 1, es)?;
+        Ok(())
     }
 }
 
 impl Module for MoistureSource {
     fn spec(&self) -> ModuleSpec {
+        let (inputs, outputs): (Vec<&str>, Vec<&str>) = if self.land {
+            (
+                vec!["temperature", "ice_fraction", "wind_speed", "ocean_mask", "land_availability", "soil_evap_cap", "sublimation_cap", "snow_cover"],
+                vec!["evaporation", "evaporation_sublimation"],
+            )
+        } else {
+            (vec!["temperature", "ice_fraction", "elevation", "wind_speed"], vec!["evaporation"])
+        };
         ModuleSpec {
             name: "moisture_source".into(),
-            inputs: ["temperature", "ice_fraction", "elevation", "wind_speed"].iter().map(|s| s.to_string()).collect(),
-            outputs: vec!["evaporation".into()],
+            inputs: inputs.iter().map(|s| s.to_string()).collect(),
+            outputs: outputs.iter().map(|s| s.to_string()).collect(),
             anomaly_hooks: vec!["evaporation".into(), "temperature_source".into()],
         }
     }
     fn params(&self) -> &ParamSet { &self.params }
     fn set_param(&mut self, name: &str, value: f64) -> Result<()> {
-        if !PARAMS.iter().any(|(k, _)| *k == name) || !value.is_finite() {
+        let known = PARAMS.iter().any(|(k, _)| *k == name) || (self.land && LAND_PARAMS.iter().any(|(k, _)| *k == name));
+        if !known || !value.is_finite() {
             return Err(Error::InvalidParam(format!("moisture_source: bad parameter '{name}'")));
         }
         let bad = match name {
-            "k_ocean" | "wind_base" | "wind_coeff" | "max_evap" => value < 0.0,
+            "k_ocean" | "wind_base" | "wind_coeff" | "max_evap" | "sublimation_coeff" => value < 0.0,
             "land_availability" | "relative_humidity_ref" => !(0.0..=1.0).contains(&value),
             _ => false,
         };
@@ -77,7 +140,13 @@ impl Module for MoistureSource {
         let n = domain.n_cells();
         if domain.media.atmosphere.is_none() {
             fields.put("evaporation", 1, vec![0.0; n])?;
+            if self.land {
+                fields.put("evaporation_sublimation", 1, vec![0.0; n])?;
+            }
             return Ok(());
+        }
+        if self.land {
+            return self.run_land(domain, fields);
         }
         let t = fields.data("temperature")?.to_vec();
         let ice = fields.data("ice_fraction")?.to_vec();
@@ -102,6 +171,11 @@ impl Module for MoistureSource {
 /// Registers `moisture_source`. Needs `temperature`, `ice_fraction`, `elevation` (Part 2) and `wind_speed` (Part 3a).
 pub fn add_moisture_source_stage(s: &mut crate::scheduler::Scheduler) -> Result<()> {
     s.register(Box::new(MoistureSource::new()))
+}
+
+/// Registers the Part 4b-3 variant of `moisture_source` (see `MoistureSource::with_land_state`).
+pub fn add_moisture_source_land_stage(s: &mut crate::scheduler::Scheduler) -> Result<()> {
+    s.register(Box::new(MoistureSource::with_land_state()))
 }
 
 #[cfg(test)]

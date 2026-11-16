@@ -127,6 +127,8 @@ pub fn lake_units(domain: &Domain, filled: &[f64], depth: &[f64]) -> (Vec<i32>, 
 /// `n_lakes`, `n_lakes_spilling`, `n_lakes_endorheic`, `n_lakes_dry`, `n_unresolved_lakes`, `river_cells`, `lake_area_m2`, `lake_volume_m3`.
 pub struct RiversLakes {
     params: ParamSet,
+    /// Part 4b-3 variant: `runoff` is an input produced by `land_water` instead of `runoff_coeff * precipitation`.
+    land_runoff: bool,
 }
 
 impl Default for RiversLakes {
@@ -163,18 +165,35 @@ impl RiversLakes {
         for k in OUTPUT_ONLY.iter() {
             params.set(k, 0.0);
         }
-        RiversLakes { params }
+        RiversLakes { params, land_runoff: false }
+    }
+
+    /// Part 4b-3 variant (module name stays `rivers_lakes`): reads the field `runoff` (kg/m^2/s, from `land_water`: the soil-bucket
+    /// overflow plus glacier snout melt) instead of computing `runoff_coeff * precipitation`, and does not write `runoff`.
+    /// `precipitation` is no longer an input. `runoff_coeff` is accepted but ignored. Output-only parameters keep their names:
+    /// `precip_land_m3s` is then the total land runoff input (m^3/s) and `land_loss_m3s` is 0, so the 4b-2 balance
+    /// `precip_land = land_loss + lake_evap + ocean + void + sink` still holds with the soil/snow losses already taken out upstream.
+    pub fn with_land_runoff() -> Self {
+        let mut m = Self::new();
+        m.land_runoff = true;
+        m
     }
 }
 
 impl Module for RiversLakes {
     fn spec(&self) -> ModuleSpec {
-        ModuleSpec {
-            name: "rivers_lakes".into(),
-            inputs: names(&["elevation", "ocean_mask", "elevation_filled", "depression_depth", "flow_dir", "flow_order", "precipitation", "evaporation"]),
-            outputs: names(&["runoff", "discharge", "river_mask", "lake_id", "lake_depth", "lake_volume", "lake_outflow", "salt_flat"]),
-            anomaly_hooks: vec![],
-        }
+        let (inputs, outputs) = if self.land_runoff {
+            (
+                names(&["elevation", "ocean_mask", "elevation_filled", "depression_depth", "flow_dir", "flow_order", "runoff", "evaporation"]),
+                names(&["discharge", "river_mask", "lake_id", "lake_depth", "lake_volume", "lake_outflow", "salt_flat"]),
+            )
+        } else {
+            (
+                names(&["elevation", "ocean_mask", "elevation_filled", "depression_depth", "flow_dir", "flow_order", "precipitation", "evaporation"]),
+                names(&["runoff", "discharge", "river_mask", "lake_id", "lake_depth", "lake_volume", "lake_outflow", "salt_flat"]),
+            )
+        };
+        ModuleSpec { name: "rivers_lakes".into(), inputs, outputs, anomaly_hooks: vec![] }
     }
     fn params(&self) -> &ParamSet { &self.params }
     fn set_param(&mut self, name: &str, value: f64) -> Result<()> {
@@ -202,12 +221,13 @@ impl Module for RiversLakes {
         let dep = fields.data("depression_depth")?.to_vec();
         let fd: Vec<i64> = fields.data("flow_dir")?.iter().map(|&v| v as i64).collect();
         let order: Vec<usize> = fields.data("flow_order")?.iter().map(|&v| v as usize).collect();
-        let precip = fields.data("precipitation")?.to_vec();
+        let precip = if self.land_runoff { vec![0.0; n] } else { fields.data("precipitation")?.to_vec() };
+        let runoff_in = if self.land_runoff { fields.data("runoff")?.to_vec() } else { vec![0.0; n] };
         let evap = fields.data("evaporation")?.to_vec();
-        if [z.len(), ocean.len(), filled.len(), dep.len(), fd.len(), order.len(), precip.len(), evap.len()].iter().any(|&l| l != n) {
+        if [z.len(), ocean.len(), filled.len(), dep.len(), fd.len(), order.len(), precip.len(), runoff_in.len(), evap.len()].iter().any(|&l| l != n) {
             return Err(Error::InvalidParam("rivers_lakes: every input field must have one value per cell".into()));
         }
-        for (name, v) in [("precipitation", &precip), ("evaporation", &evap)] {
+        for (name, v) in [("precipitation", &precip), ("runoff", &runoff_in), ("evaporation", &evap)] {
             if v.iter().any(|x| !x.is_finite()) { return Err(Error::NonFinite(name.into())); }
         }
         let coeff = self.params.get_or("runoff_coeff", 0.4);
@@ -223,6 +243,13 @@ impl Module for RiversLakes {
         let (mut precip_land, mut land_loss) = (0.0, 0.0);
         for c in 0..n {
             if ocean[c] {
+                continue;
+            }
+            if self.land_runoff {
+                let r = runoff_in[c].max(0.0);
+                runoff[c] = r;
+                rq[c] = r * area[c] / rho;
+                precip_land += rq[c];
                 continue;
             }
             let p = precip[c].max(0.0);
@@ -431,7 +458,9 @@ impl Module for RiversLakes {
         p.set("lake_area_m2", lake_area);
         p.set("lake_volume_m3", lake_vol_total);
 
-        fields.put("runoff", 1, runoff)?;
+        if !self.land_runoff {
+            fields.put("runoff", 1, runoff)?;
+        }
         fields.put("discharge", 1, discharge)?;
         fields.put("river_mask", 1, river.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect())?;
         fields.put("lake_id", 1, lake_id)?;
