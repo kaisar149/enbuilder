@@ -1,6 +1,8 @@
-# ARCHITECTURE.md (after PART 4c-1: stream power erosion, `erosion` module and `TerrainShaping::with_erosion`; 4c-1 WRITTEN WITHOUT A RUST TOOLCHAIN. Before that PART 4b-3: soil moisture, snow, glaciers, land sublimation, the `water_cycle` loop; 4b-3 and 4b-2 WRITTEN WITHOUT A RUST TOOLCHAIN, python mirrors pass; 4b-1 and older as recorded below)
+# ARCHITECTURE.md (after PART 4c-2: sediment transport, deposition, thermal erosion, `sediment` module and `TerrainShaping::with_net_erosion`; 4c-2 COMPILED, 271 tests pass (sandbox, cargo offline). Before that PART 4c-1: stream power erosion, now also compiled and passing; 4b-3 and older as recorded below)
 
-**Part 4c-1 (latest session, COMPILED)** adds `src/erosion.rs` (module `erosion`; pure `incise`; `seed_erosion_state`, `commit_erosion_state`, `add_erosion_module`, `run_erosion_steps`, `ErosionStep`, `EROSION_PARAMS`), `TerrainShaping::with_erosion()` in `terrain.rs`, `tests/part4c1.rs` (12 tests), `reference/mirror_4c1.py` (passes). See section "Part 4c-1". Run `cargo test --test part4c1`, then `cargo test`, and send the compiler output back.
+**Part 4c-2 (latest session, COMPILED, all 271 tests pass)** adds `src/sediment.rs` (module `sediment`; pure `transport_capacity`, `fill_basin`, `thermal_relax`, `route_sediment`; `seed_sediment_state`, `commit_sediment_state`, `add_sediment_module`, `add_surface_stage`, `set_surface_years`, `seed_surface_state`, `run_surface_steps`, `SurfaceStep`, `SEDIMENT_PARAMS`), `TerrainShaping::with_net_erosion()` in `terrain.rs`, `tests/part4c2.rs` (12 tests), `reference/mirror_4c2.py` (+ probes). See section "Part 4c-2". Sandbox build note: the project `Cargo.toml` lists optional `wgpu`/`pollster`, which cannot resolve offline; build from a scratch copy whose Cargo.toml has no `[dependencies]` (feature `gpu = []`), the real file is unchanged.
+
+**Part 4c-1 (previous session, now compiled and passing)** adds `src/erosion.rs` (module `erosion`; pure `incise`; `seed_erosion_state`, `commit_erosion_state`, `add_erosion_module`, `run_erosion_steps`, `ErosionStep`, `EROSION_PARAMS`), `TerrainShaping::with_erosion()` in `terrain.rs`, `tests/part4c1.rs` (12 tests), `reference/mirror_4c1.py` (passes). See section "Part 4c-1". Run `cargo test --test part4c1`, then `cargo test`, and send the compiler output back.
 
 **Part 4b-3 (latest session, COMPILED)** adds `src/land_water.rs` (modules `land_supply`, `land_water`; pure `snow_fraction`, `land_cell_step`, `glacier_flow`; `seed_land_state`, `commit_land_state`, `LandBudget`, `LandParams`, `set_land_param`, `set_land_step`, `add_land_water_modules`, `add_land_water_pipeline`, `run_land_cycle`), `MoistureSource::with_land_state()` and `add_moisture_source_land_stage` in `moisture.rs`, `RiversLakes::with_land_runoff()` in `rivers_lakes.rs`, `tests/part4b3.rs` (17 tests), `reference/mirror_4b3.py` (passes). See section "Part 4b-3". The sandbox had no Rust toolchain: run `cargo test --test part4b3`, then `cargo test`, and send the compiler output back.
 
@@ -90,6 +92,9 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `erosion.rs` | `Erosion` (module `erosion`), `incise`, `seed_erosion_state`, `commit_erosion_state`, `add_erosion_module`, `run_erosion_steps`, `ErosionStep`, `EROSION_PARAMS`, `MIN_STRENGTH` (Part 4c-1, NOT compiled) |
 | `tests/part4c1.rs` | Part 4c-1: implicit equation, hand chain, committed state, gravity/strength links, cap and huge steps, routed-sphere invariants and repeated steps, determinism, interface, terrain variant (12 tests, NOT compiled) |
 | `reference/mirror_4c1.py` | python mirror of the implicit stream power update; hand numbers and randomized ordering invariants (`python mirror_4c1.py`) |
+| `sediment.rs` | `Sediment` (module `sediment`), `transport_capacity`, `fill_basin`, `thermal_relax`, `ThermalReport`, `route_sediment`, `RouteInput`, `RouteParams`, `Routed`, `SedimentBudget`, `seed_sediment_state`, `commit_sediment_state`, `add_sediment_module`, `add_surface_stage`, `set_surface_years`, `seed_surface_state`, `run_surface_steps`, `SurfaceStep`, `SEDIMENT_PARAMS` (Part 4c-2) |
+| `tests/part4c2.rs` | Part 4c-2: capacity and basin-fill hand numbers, thermal limit/volume/gravity/strength, delta and floodplain on a ramp, lake trapping, sphere volume budget (L3, L4), talus limit after the step, no new pits and every land cell drains, no deposits on mountains, wall/wrap/void/closed budgets, determinism, interface, terrain variant (12 tests) |
+| `reference/mirror_4c2.py`, `run_4c2_*.py` | python mirror of the routing, lake trapping, thermal relaxation and budget, with probes and hand cases |
 | `land_water.rs` | `LandSupply` (module `land_supply`), `LandWater` (module `land_water`), `snow_fraction`, `land_cell_step`, `glacier_flow`, `LandParams`, `LAND_PARAMS`, `seed_land_state`, `commit_land_state`, `LandBudget`, `set_land_param`, `set_land_step`, `add_land_water_modules`, `add_land_water_pipeline`, `run_land_cycle`, `LandSeason` (Part 4b-3, NOT compiled) |
 | `tests/part4b3.rs` | Part 4b-3: snow ramp, hand-number cell ledger, ledger conservation, glacier flow chain / snout / cap / sphere conservation, supply caps and land-state source, closure and bounds over 14 random steps, determinism, dry vs wet soil, snow and glaciers only where cold, rivers read land runoff, pipeline order and parameters, 12-step closure incl. atmosphere + land vs ocean exchange, wetter soil gives more rain, old pipeline bit-identical, interface (17 tests, NOT compiled) |
 | `reference/mirror_4b3.py` | python mirror of the ledger, glacier flow, supply caps and land-state source; randomized closure 2e-14; the hand numbers quoted in `tests/part4b3.rs` (`python mirror_4b3.py`) |
@@ -981,7 +986,7 @@ No Rust toolchain, no network: **not compiled, tests not run**. Every API the co
 - Glacier flow is a first-order diffusive transfer, not a mass-balance ice-dynamics model; no calving, no isostasy.
 - Rivers still do not return water to the atmosphere through lakes.
 
-## Part 4c-1: hydraulic erosion by stream power, no feedback yet (NOT COMPILED: written without a Rust toolchain)
+## Part 4c-1: hydraulic erosion by stream power, no feedback yet (now COMPILED, 12 tests pass)
 
 **Decision recorded first (as the PART file asks).** `terrain` stays the only producer of `elevation`. `erosion` writes `erosion_delta` (m, CUMULATIVE; negative = cut, positive = deposit; 4c-1 only cuts) and never `elevation`. `TerrainShaping::with_erosion()` (variant constructor, same pattern as 3b-3) reads `erosion_delta` and adds it to `tectonic_elevation` BEFORE noise, thermal erosion and the caps; `TerrainShaping::new()` is untouched (bit-identical, tested). The two modules form a cycle (`terrain -> elevation -> erosion -> erosion_delta -> terrain`), so they cannot share a scheduler until the 4c-3 loop is declared (tested: `plan_order` errors). Until then `run_erosion_steps` is the stand-in driver: per step it runs a routing scheduler (`add_flow_routing_stage`), runs `erosion`, adds `erosion_step` to `elevation`, commits the state.
 
@@ -1006,13 +1011,61 @@ Pure `incise` (closed form, residual of the implicit equation for n in 0.5..3, h
 `reference/mirror_4c1.py` mirrors the scheme (randomized ordering and skip invariants pass) and prints the hand numbers.
 
 ### Verification status (4c-1)
-No Rust toolchain, no network: **not compiled, tests not run**. Python mirror passes. Most likely to need a tweak: ordinary compile/borrow errors; `repeated_steps_lower_peaks...` (the depression-count assertion `n_dep1 <= n_dep0` depends on flow routing treating exact ties as non-depressions); `terrain_variant...` cycle assertion (`plan_order` must error).
+Compiled in the 4c-2 session; 12/12 tests pass, including the depression-count and cycle-detection assertions flagged earlier.
 
 ### Open (carry into 4c-2 and 4c-3)
-- No deposition: eroded volume leaves the model (4c-2: sediment transport capacity, deltas, floodplains).
+- (Resolved in 4c-2) No deposition: eroded volume left the model (4c-2: sediment transport capacity, deltas, floodplains).
 - No feedback: declare the loop `terrain` (variant) + `flow_routing` + `erosion` (+ climate) in 4c-3; `erosion_delta` is the carrier. Note that `terrain` re-adds noise and re-applies thermal erosion and the caps to `tectonic + delta` each run, so the 4c-3 loop must check that `elevation` does not drift (idempotence of terrain on its own output is not guaranteed).
 - `K` is a global constant; no rainfall (`discharge`) or glacier dependence; no thermal/hillslope diffusion beyond the existing terrain relaxation; `time_flow_rate` anomaly hook declared but not read.
 - Flow directions are held fixed within a step (they are recomputed between steps).
+
+## Part 4c-2: sediment transport, deposition, thermal erosion (COMPILED, 12 tests pass)
+
+### Decisions (record)
+- **Carrier.** The PART text says deposits raise `erosion_delta`. One producer per field (scheduler rule) and the 4c-1 tests need `erosion_delta` to stay cut-only, so `sediment` produces the NET field `terrain_delta` (m, cumulative: incision + deposition + thermal) and `terrain_step` (m, this step). `TerrainShaping::with_net_erosion()` reads `terrain_delta` (same placement as `with_erosion`: added to `tectonic_elevation` before noise, thermal and caps). `terrain -> elevation -> erosion -> sediment -> terrain_delta -> terrain` is a cycle, so they cannot share a scheduler until the 4c-3 loop exists (tested: `plan_order` errors).
+- **Order inside one step.** (1) eroded surface `z1 = elevation + erosion_step`; (2) route sediment down the drainage tree, capacity limited deposition; (3) thermal relaxation of `z2 = z1 + deposition`; `terrain_step = z3 - elevation`.
+- **Thermal erosion** is a pairwise, area-weighted, volume-conserving talus projection (Gauss-Seidel over edges until the largest excess is below `thermal_tol_m` or `thermal_iters` sweeps). It is zero-sum by itself and is NOT fed into the river flux (hillslope material stays on the surface as talus aprons). Limit per edge: `max_slope * talus_scale * (g_ref/g_pair) * strength_pair * edge_dist` (pair values are means), the same meaning as `terrain.max_slope`, so gravity and rock strength enter as in Part 2.
+- Time handling as 4b-3/4c-1: reads the COMMITTED `terrain_delta_prev`; `commit_sediment_state` once per step; `years_per_step` of `erosion` and `sediment` must be equal (`set_surface_years`, `run_surface_steps` checks and errors otherwise).
+
+### Fields
+| Field | Units | Meaning |
+|---|---|---|
+| `sediment` | m^3/yr | load leaving the cell down `flow_dir`; at an outlet, the volume leaving the model |
+| `sediment_capacity` | m^3/yr | `Kc * Q^a * S` |
+| `deposition` | m | fluvial rise this step, >= 0 |
+| `thermal_step` | m | signed talus change this step |
+| `terrain_step` | m | `z3 - elevation` (incision + deposition + thermal) |
+| `terrain_delta` | m | cumulative net change (carrier read by `with_net_erosion`) |
+| `delta_mask` | 0/1 | deposit on an ocean cell fed by a river (delta) |
+| `floodplain_mask` | 0/1 | deposit on a land reach with `S <= floodplain_slope` |
+| `terrain_delta_prev` | m | committed state (`seed_sediment_state`, `commit_sediment_state`) |
+Inputs: `elevation`, `elevation_filled`, `flow_dir`, `drainage_area` (or `discharge` with `Sediment::with_discharge()`), `depression_depth`, `ocean_mask`, `rock_strength`, `erosion_step`, `terrain_delta_prev`.
+
+### Law
+Capacity `qs_cap = Kc * Q^a * S` (m^3/yr). `Q` (m^3/s) = `q_per_area * drainage_area`, or the `discharge` field; `S = max(z1_c - base, 0)/L` to the receiver (base = lake SURFACE when the receiver is a lake cell). Load of a cell = own eroded volume + inflow. The excess over `qs_cap * years_per_step` is deposited with fraction `deposit_fraction` (the rest moves on), limited by headroom: a cell is never raised above its lowest donor's effective height (lake cells count at their spill level), so deposition cannot create a pit. **Lakes** (depression units from `lake_units`) trap ALL incoming sediment up to their basin volume below the spill level (`fill_basin`, water-filling from the lowest floor); the remainder leaves through the exit cells (equal split). **Ocean** cells receiving sediment keep `deposit_fraction` of it (raised at most to `sea_level`, never above their donors, so a delta grows seaward), the rest is exported. Void-edge and closed-world sink cells export everything. Units are contracted to one node and ordered with Kahn's algorithm; a unit that would make the contracted graph cyclic (tie artefact on flat terrain) is dissolved into ordinary cells and counted in `n_unresolved_lakes`.
+
+### Volume budget (m^3 per step; tested to 1e-8 relative, observed ~1e-15)
+`eroded = deposited_land + deposited_delta + stored_lakes + export_ocean + export_void + export_sink`
+and independently `sum(area * terrain_step) = -(export_ocean + export_void + export_sink)` (thermal is zero-sum, `thermal_volume_error_m3`). Output-only parameters on the module: `eroded_volume_m3`, `deposited_land_m3`, `deposited_delta_m3`, `stored_lakes_m3`, `export_ocean_m3`, `export_void_m3`, `export_sink_m3`, `balance_residual`, `thermal_moved_m3`, `thermal_volume_error_m3`, `thermal_iters_used`, `thermal_max_excess_m`, `n_unresolved_lakes`, `n_deposit_cells`, `n_delta_cells`, `n_floodplain_cells`, `max_deposit_m`.
+
+### Parameters (`SEDIMENT_PARAMS`, defaults)
+`Kc` 5e7, `a_exp` 1, `years_per_step` 1e5 (must equal `erosion`), `q_per_area` 1e-8, `deposit_fraction` 0.5, `talus_scale` 1, `max_slope` 0.05, `thermal_iters` 1000 (0 = thermal off), `thermal_tol_m` 1e-6, `sea_level` 0, `floodplain_slope` 0.005. **Scale note:** the default `Kc` is derived for ~1e12 m^2 basins; on small test grids (~1e9 m^2) capacity is never exceeded on land, so tests lower `Kc` (1e7 for the ramp) to stay in the same regime. Rescale `Kc` with basin size when using coarse or tiny meshes.
+
+### Tests (`tests/part4c2.rs`, 12) and acceptance mapping
+- Volume conservation to 1e-8: `volume_is_conserved_on_a_sphere_over_repeated_steps` (L3 seeds 1,2 and L4, 8 steps each, budget and surface identity), `boundaries_wrap_void_and_closed_worlds_keep_the_budget`.
+- Deltas and floodplains, no mountain deposits: `deltas_form_at_the_river_mouth_and_floodplains_on_the_flat_reach`, `deposits_go_to_low_ground_not_to_mountains`. Lakes: `a_lake_traps_all_incoming_sediment_until_filled` (asserts a basin exists first).
+- Talus limit: `thermal_relaxation_respects_the_limit_and_conserves_volume` (pure), `thermal_step_leaves_no_slope_above_the_talus_limit` (module, plus thermal switch off).
+- No new pits, everything drains: `no_new_pits_and_every_land_cell_still_drains` (re-runs `flow_routing` after 8 steps).
+- Deterministic: `sediment_is_deterministic`. Interface, errors, scheduler order, years mismatch, terrain variant and cycle: `parameters_state_and_errors`, `terrain_net_variant_reads_terrain_delta`. Pure hand numbers: `capacity_and_basin_filling_hand_numbers`.
+
+### Verification status (4c-2)
+Compiled and run in the sandbox: 12/12 in `tests/part4c2.rs`, 271/271 across the crate, zero compiler warnings in the build. Python mirror agrees on budget residual (<= 1e-15) and depression counts. The first run of the new tests had one failure (floodplain on the toy ramp), which was a test scale issue (see Scale note), not a code bug.
+
+### Open (carry into 4c-3)
+- Declare the feedback loop `terrain (with_net_erosion)` + `flow_routing` + `erosion` + `sediment` (+ climate). `terrain` re-adds noise and re-applies thermal erosion and caps to `tectonic + delta` every run, so check that `elevation` does not drift (idempotence on its own output is not guaranteed). `run_surface_steps` is the stand-in driver (it adds `terrain_step` to `elevation` itself).
+- Thermal material is not routed as river load (kept local); a single global `Kc` and `a_exp`; `time_flow_rate` hook declared, not read; full recompute only (no dirty-region path).
+- Thermal convergence can need many sweeps on large flat planes (mirror: ~2900 sweeps on 40x24); `thermal_iters` caps it, `thermal_max_excess_m` reports what is left.
+- Tie-artefact lake units are dissolved (`n_unresolved_lakes`); it was 0 in every test world.
 
 ## Parameters from Part 1
 
@@ -1047,7 +1100,8 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 6. Whether `boundary_len` should also carry boundary kind per edge (needed once wrap and wall mix on one mesh).
 
 ## Verification status
-- Part 4c-1: written without a Rust toolchain; not compiled, tests not run; python mirror passes (see "Part 4c-1"). Part 4b-3 was compiled by the owner (16 of 17 passed, the 17th was fixed afterwards).
+- Part 4c-2: compiled in the sandbox, 12/12 new tests and 271/271 overall pass (see "Part 4c-2").
+- Part 4c-1: now compiled in the sandbox together with 4c-2; 12/12 pass (originally written without a toolchain). Part 4b-3 was compiled by the owner (16 of 17 passed, the 17th was fixed afterwards).
 - Part 4b-3: written without a Rust toolchain; not compiled, tests not run; python mirror passes (see "Part 4b-3"). 4b-2 still unconfirmed too.
 - Part 4b-2: written without a Rust toolchain; not compiled, tests not run; python mirrors pass (see "Part 4b-2").
 - Part 4b-1: reported compiled and passing by the project owner (originally written without a toolchain).

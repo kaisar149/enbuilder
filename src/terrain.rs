@@ -30,7 +30,7 @@ const PARAMS: [(&str, f64); 10] = [
     ("seed_offset", 0.0),
 ];
 
-pub struct TerrainShaping { params: ParamSet, erosion: bool }
+pub struct TerrainShaping { params: ParamSet, erosion: Option<&'static str> }
 
 impl Default for TerrainShaping {
     fn default() -> Self { Self::new() }
@@ -42,7 +42,7 @@ impl TerrainShaping {
         for (k, v) in PARAMS.iter() {
             params.set(k, *v);
         }
-        TerrainShaping { params, erosion: false }
+        TerrainShaping { params, erosion: None }
     }
 
     /// Part 4c-1 variant: also reads `erosion_delta` (m, cumulative, from the `erosion` module) and adds it to `tectonic_elevation` BEFORE
@@ -50,7 +50,15 @@ impl TerrainShaping {
     /// `erosion` without the 4c-3 loop (cycle).
     pub fn with_erosion() -> Self {
         let mut t = Self::new();
-        t.erosion = true;
+        t.erosion = Some("erosion_delta");
+        t
+    }
+
+    /// Part 4c-2 variant: identical to `with_erosion()` but reads the NET carrier `terrain_delta` (incision + deposition + thermal, from the
+    /// `sediment` module) instead of the cut-only `erosion_delta`. Same cycle caveat: needs the 4c-3 loop to share a scheduler with `sediment`.
+    pub fn with_net_erosion() -> Self {
+        let mut t = Self::new();
+        t.erosion = Some("terrain_delta");
         t
     }
 }
@@ -65,7 +73,10 @@ impl Module for TerrainShaping {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "terrain".into(),
-            inputs: if self.erosion { vec!["tectonic_elevation".into(), "rock_strength".into(), "erosion_delta".into()] } else { vec!["tectonic_elevation".into(), "rock_strength".into()] },
+            inputs: match self.erosion {
+                Some(f) => vec!["tectonic_elevation".into(), "rock_strength".into(), f.into()],
+                None => vec!["tectonic_elevation".into(), "rock_strength".into()],
+            },
             outputs: vec!["elevation".into(), "slope".into()],
             anomaly_hooks: vec!["gravity".into(), "elevation".into(), "rock_strength".into()],
         }
@@ -102,10 +113,10 @@ impl Module for TerrainShaping {
             return Err(Error::InvalidParam("terrain: gravity must be positive in every cell".into()));
         }
         let mut e = tect;
-        if self.erosion {
-            let d = fields.data("erosion_delta")?;
+        if let Some(fname) = self.erosion {
+            let d = fields.data(fname)?;
             if d.len() != n || d.iter().any(|x| !x.is_finite()) {
-                return Err(Error::InvalidParam("terrain: erosion_delta must be finite with one value per cell".into()));
+                return Err(Error::InvalidParam(format!("terrain: {fname} must be finite with one value per cell")));
             }
             for i in 0..n {
                 e[i] += d[i];
