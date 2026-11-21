@@ -1,4 +1,6 @@
-# ARCHITECTURE.md (after PART 4b-2: runoff, discharge, rivers, fill-and-spill lakes; 4b-2 WRITTEN WITHOUT A RUST TOOLCHAIN, python mirrors pass; 4b-1 and older as recorded below)
+# ARCHITECTURE.md (after PART 4b-3: soil moisture, snow, glaciers, land sublimation, the `water_cycle` loop; 4b-3 and 4b-2 WRITTEN WITHOUT A RUST TOOLCHAIN, python mirrors pass; 4b-1 and older as recorded below)
+
+**Part 4b-3 (latest session, COMPILED)** adds `src/land_water.rs` (modules `land_supply`, `land_water`; pure `snow_fraction`, `land_cell_step`, `glacier_flow`; `seed_land_state`, `commit_land_state`, `LandBudget`, `LandParams`, `set_land_param`, `set_land_step`, `add_land_water_modules`, `add_land_water_pipeline`, `run_land_cycle`), `MoistureSource::with_land_state()` and `add_moisture_source_land_stage` in `moisture.rs`, `RiversLakes::with_land_runoff()` in `rivers_lakes.rs`, `tests/part4b3.rs` (17 tests), `reference/mirror_4b3.py` (passes). See section "Part 4b-3". The sandbox had no Rust toolchain: run `cargo test --test part4b3`, then `cargo test`, and send the compiler output back.
 
 **Part 4b-2 (latest session, COMPILED)** adds `src/rivers_lakes.rs` (module `rivers_lakes`, pure functions `solve_lake`, `lake_units`, wiring `add_rivers_lakes_module` / `add_rivers_lakes_stage`), `tests/part4b2.rs` (11 tests), `reference/mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py` (all pass). `lib.rs` gained `pub mod rivers_lakes;` and one `pub use`. **The sandbox had no Rust toolchain: please run `cargo test --test part4b2`, then `cargo test`, and send back the compiler output.** See "Part 4b-2". 4b-1 was reported compiled and passing by the project owner.
 
@@ -76,13 +78,16 @@ Changes to Part 1 code in Part 2: `Domain` gained `spin_axis: Vec3` (unit rotati
 | `ocean_currents.rs` | `OceanCurrents` (module `ocean_currents`), `add_ocean_currents_stage`, `current_from_psi`, `coast_vectors`, `coast_outflux`, `apply_coast_slip`, `clamp_speed` (Part 4a-2c); beta term, `boundary_layer_report`, `boundary_layer_warning`, `BoundaryLayerReport`, `DEFAULT_R_FRICTION` (Part 4a-2d); all compiled and passing |
 | `tests/part4a2c.rs` | Part 4a-2c: gyres, linearity, coast flux, divergence, clamp (12 tests, pass; module pinned to beta off and r 5e-8 by `run_with`) |
 | `ocean_validation.rs` | `coast_hops`, `speed_report`, `SpeedReport`, `seam_spikes`, `SeamReport`, `pentagon_cells`, `cross_face_cells`, `nonzonal_fraction`, `vorticity_balance` (Part 4a-2e, NOT compiled) |
-| `tests/part4.rs` | Part 4a-2e: current stage on sphere, waterworld, plane (wall, wrap, seam shift, wall pin), cube, tidally locked sphere, real pipeline, defaults and interface (15 tests, NOT compiled) |
+| `tests/part4.rs` | Part 4a-2e: current stage on sphere, waterworld, plane (wall, wrap, seam shift, wall pin), cube, tidally locked sphere, real pipeline, defaults and interface (17 tests, NOT compiled) |
 | `reference/mirror_4a2e.py` | numpy mirror of the 4a-2e rules and diagnostics on sphere, plane and cube; every threshold of `tests/part4.rs` comes from it (`python mirror_4a2e.py all`) |
 | `examples/current_probe.rs` | `cargo run --release --example current_probe -- <level>`: real climate pipeline into the current stage, prints speeds, seam spike, module counters (NOT compiled) |
 | `ocean_secondary.rs` | `Upwelling`, `Thermohaline`, `SeaIce`, `Nutrients` (modules `upwelling`, `thermohaline`, `sea_ice`, `nutrients`), `add_ocean_secondary_stage`, `add_atmosphere_ocean_pipeline_full`, `add_ocean_climate_loop_full` (Part 4a-4, NOT compiled) |
 | `flow_routing.rs` | `FlowRouting` (module `flow_routing`), `priority_flood`, `Flood`, `flow_directions`, `flow_order`, `accumulate_area`, `root_of`, `outlet_mask`, `add_flow_routing_module`, `add_flow_routing_stage` (Part 4b-1, NOT compiled) |
 | `tests/part4b1.rs` | Part 4b-1: invariants on sphere, cube, walled/wrapped plane, disc; hand-built bowl, plateau, pit, slope; Void vs Wall; closed world sink; all-land and all-ocean spheres; determinism; interface (11 tests, NOT compiled) |
 | `reference/mirror_4b1.py`, `mirror_4b1_cases.py` | python mirror of the flood, steepest descent and accumulation; checks the filled surface against an independent Planchon-Darboux fill and holds the hand-built expectations (`python mirror_4b1.py`) |
+| `land_water.rs` | `LandSupply` (module `land_supply`), `LandWater` (module `land_water`), `snow_fraction`, `land_cell_step`, `glacier_flow`, `LandParams`, `LAND_PARAMS`, `seed_land_state`, `commit_land_state`, `LandBudget`, `set_land_param`, `set_land_step`, `add_land_water_modules`, `add_land_water_pipeline`, `run_land_cycle`, `LandSeason` (Part 4b-3, NOT compiled) |
+| `tests/part4b3.rs` | Part 4b-3: snow ramp, hand-number cell ledger, ledger conservation, glacier flow chain / snout / cap / sphere conservation, supply caps and land-state source, closure and bounds over 14 random steps, determinism, dry vs wet soil, snow and glaciers only where cold, rivers read land runoff, pipeline order and parameters, 12-step closure incl. atmosphere + land vs ocean exchange, wetter soil gives more rain, old pipeline bit-identical, interface (17 tests, NOT compiled) |
+| `reference/mirror_4b3.py` | python mirror of the ledger, glacier flow, supply caps and land-state source; randomized closure 2e-14; the hand numbers quoted in `tests/part4b3.rs` (`python mirror_4b3.py`) |
 | `rivers_lakes.rs` | `RiversLakes` (module `rivers_lakes`), `solve_lake`, `LakeSolve`, `lake_units`, `add_rivers_lakes_module`, `add_rivers_lakes_stage` (Part 4b-2, NOT compiled) |
 | `tests/part4b2.rs` | Part 4b-2: conservation and lake/river invariants on sphere, cube, walled/wrapped/void plane, disc, closed world; hand-built bowl (wet, weak, no rain), cascade, merge, tilted-plane rivers; wet/dry/parameter extremes; determinism; interface (11 tests, NOT compiled) |
 | `reference/mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py` | python mirror of the lake balance, Kahn contraction, river fill and conservation; hand-built expectations; port of the Rust invariants (`python mirror_4b2.py`) |
@@ -215,8 +220,8 @@ Notes for 3b-2:
 - `albedo` is not an input (the spec listed it but no use exists yet). Add it when net-radiation limiting of evaporation is introduced.
 
 ### Decisions (3b-1)
-- Sublimation over ice is ignored: `(1 - ice_fraction)` removes evaporation proportionally, so fully iced cells give exactly 0 and partially iced cells scale linearly. Open: add a small sublimation term (cold, dry katabatic air) later.
-- Ocean vs land is decided by `elevation < sea_level` (lakes later by hydrology). `land_availability` is a global constant until soil moisture / biomes exist.
+- Sublimation over ice is ignored: `(1 - ice_fraction)` removes evaporation proportionally, so fully iced cells give exactly 0 and partially iced cells scale linearly. Open: add a small sublimation term (cold, dry katabatic air) later.  **[CLOSED in 4b-3: `MoistureSource::with_land_state` adds sublimation over snow and ice (`evaporation_sublimation`)]**
+- Ocean vs land is decided by `elevation < sea_level` (lakes later by hydrology). `land_availability` is a global constant until soil moisture / biomes exist.  **[CLOSED in 4b-3: `land_water` keeps a soil bucket; the land-state source reads `land_availability` as a field]**
 - Air humidity is a fixed fraction of saturation here; in 3b-2 `e_air_ref` should come from the transported humidity, making `E` self-limiting.
 - Added parameter `wind_base` (0.5) so the spec's `f = 0.5 + 0.1 u` is data, not code.
 
@@ -284,7 +289,7 @@ Verified: north-south Gaussian ridge under a westerly gives windward `precip_oro
 ### Decisions and caveats (3b-3)
 - **Gravity sanity test:** the PART file says doubling gravity "reduces" dry-adiabatic cooling per metre. Physically `g/cp` doubles, so the test asserts the lapse rate doubles (and that capacity per column falls with g). Revisit if you really want the opposite.
 - Magnitudes are untuned. Dry air (RH << 1) produces no orographic rain (needs enough rise to saturate); that is intended. Tune `vapor_scale_ratio`, `rh_trigger`, `conv_rate`, `front_gain` against a reference Earth-like run before 3c.
-- No re-evaporation of rain, no snow/rain split, no soil moisture return (evaporation over land still uses constant `land_availability`). Precipitation is not yet read by hydrology (Part 4).
+- No re-evaporation of rain, no snow/rain split, no soil moisture return (evaporation over land still uses constant `land_availability`). Precipitation is not yet read by hydrology (Part 4).  **[CLOSED in 4b-3: soil moisture now returns water through the land-state source; snow/rain split is in `land_water`; re-evaporation of rain is still open]**
 - `evaporation` is not made self-limiting by humidity yet (open since 3b-1).
 - Coupling `elevation` to wind (3a blocking) and rain shadow share terrain but do not feed back; seasonal runs (two seasons) remain a driver-level task: run the pipeline per `season`.
 - Full recompute only (`DirtyRegion` ignored). Time-averaged rain rates assume `transport_time_s` > 0.
@@ -311,7 +316,7 @@ Verified: north-south Gaussian ridge under a westerly gives windward `precip_oro
 ### Open issues (carry into later parts)
 1. **No thermal inertia** (Part 2): solstice runs are extreme (summer pole near 300 K, E ~ 8 mm/day, P up to 9 mm/day at 30 deg of the summer hemisphere; the global mean swings 1.7 vs 3.8). Seasonal moisture realism depends on adding a heat-capacity state or blending annual and seasonal insolation.
 2. **Sublimation** over ice is still zero; **land heat capacity** and **land-sea monsoons** from `temperature_sl` contrast only.
-3. **Moisture feedback to the energy balance:** no latent heat, no cloud albedo, no greenhouse from vapour. Evaporation is not humidity-limited (`e_air_ref` is a fixed fraction), so rain recycles locally; `land_availability` is a constant (soil moisture comes with hydrology).
+3. **Moisture feedback to the energy balance:** no latent heat, no cloud albedo, no greenhouse from vapour. Evaporation is not humidity-limited (`e_air_ref` is a fixed fraction), so rain recycles locally; `land_availability` is a constant (soil moisture comes with hydrology).  **[CLOSED in 4b-3: the constant `land_availability` is replaced by soil moisture in the 4b-3 pipeline (the old constant stays the default of the old pipeline)]**
 4. **Convective trigger realism:** crude temperature ramp + RH threshold gated by raw divergence; no CAPE, no diurnal cycle. Tune `conv_*`, `front_gain`, `rh_trigger` against better references.
 5. **Transport:** first-order upwind is diffusive; the projected wind has no ITCZ convergence (raw `wind_divergence` is used for rain instead); closed domains force zero net cross-section flow.
 6. **Orographic rain** depends on resolution (`lift_gain` compensates); no downslope drying/foehn warming; no re-evaporation of falling rain; no snow/rain split.
@@ -923,12 +928,53 @@ Residual < 1e-15 on every world. Units / spilling: sphere L3 26/23, sphere L4 11
 No Rust toolchain, no network: **not compiled, tests not run**. The python mirrors run and pass (`mirror_4b2.py`, `mirror_4b2_cases.py`, `mirror_4b2_invariants.py`). Run `cargo test --test part4b2`, then `cargo test`, and send the output back. Expect small compile or borrow errors. The two mirror-derived Rust assertions most likely to differ if the Rust ocean mask differs from the mirror's: `n_unresolved_lakes == 0` on the jittered worlds and "no lake spills" in the dry wrapped world.
 
 ### Open (carry into 4b-3)
-- `runoff_coeff` is a constant; soil moisture, snow and glacier accumulation vs melt replace it in 4b-3 (and give a seasonal runoff).
+- `runoff_coeff` is a constant; soil moisture, snow and glacier accumulation vs melt replace it in 4b-3 (and give a seasonal runoff).  **[CLOSED in 4b-3: `runoff` now comes from `land_water` (soil overflow, snow and ice melt, snout melt); `rivers_lakes` reads it via `RiversLakes::with_land_runoff()`]**
 - Lakes do not yet feed back to the climate (no evaporation source, albedo or heat capacity from lake cells; open water uses the land `evaporation` field times `lake_evap_factor`).
 - Steady state only: no lake filling time, no flood pulses, no storage change; `lake_storage_change_m3s` is a placeholder 0.
 - Lakes below sea level vs ocean: a below-sea-level component smaller than the ocean-mask threshold is a lake here, a large one is ocean (4a-1 rule). Unchanged.
 - No incremental (dirty-region) update; the whole routing and lake solve is recomputed (O(n log n)).
 - Erosion (4b-4) will change `elevation`, so `flow_routing` and `rivers_lakes` must rerun inside that loop.
+
+## Part 4b-3: soil moisture, snow, glaciers, land sublimation, the `water_cycle` loop (NOT COMPILED: written without a Rust toolchain)
+
+Wiring: `add_land_water_pipeline(&mut s)` registers the energy loop, pressure + wind, `sea_level` + `ocean_mask`, `flow_routing`, `land_supply`, `moisture_source` (land-state variant), `moisture_transport` (with precipitation, `warm_start` 1), `land_water`, `rivers_lakes` (land-runoff variant) and declares the loop `water_cycle` (members `moisture_source` + `moisture_transport`, watch `vapor` and `precipitation`, relaxation 1, tolerance 1e-4, max 60 passes). Needs `elevation`, a seeded `temperature` (`seed_temperature`, done by `earth_like_world`) and `seed_land_state(&mut f, soil_m)`. Drive it with `run_land_cycle(&d, &mut f, &mut s, &seasons)`: per season it sets `insolation.season`, runs the scheduler, computes the atmosphere and land budgets and then `commit_land_state`. One step = `step_s` = 2 592 000 s (30 d) = `moisture_transport.transport_time_s`; change both with `set_land_step`. Order: `ocean_mask -> flow_routing -> land_supply -> [moisture_source, moisture_transport] -> land_water -> rivers_lakes`.
+
+| Module | Inputs | Outputs | Parameters |
+|---|---|---|---|
+| `land_supply` | `ocean_mask`, `soil_moisture_prev`, `snow_water_equivalent_prev`, `glacier_ice_prev` | `land_availability` (0..1; 1 over ocean), `soil_evap_cap`, `sublimation_cap` (kg/m^2/s: what the stores hold at the START of the step, 0 over ocean), `snow_cover` (w/(w+ref), w = snow + 0.917 ice, m w.e.) | shared land table |
+| `moisture_source` (variant `with_land_state`) | `temperature`, `ice_fraction`, `wind_speed`, `ocean_mask`, `land_availability`, `soil_evap_cap`, `sublimation_cap`, `snow_cover` | `evaporation`, `evaporation_sublimation` (the part of `evaporation` from snow and ice) | the old 7 plus `sublimation_coeff` 0.1; the constant `land_availability` parameter is unused here |
+| `land_water` | `precipitation`, `evaporation`, `evaporation_sublimation`, `temperature`, `ocean_mask`, `elevation`, `flow_dir`, `soil_moisture_prev`, `snow_water_equivalent_prev`, `glacier_ice_prev`, `snow_age_s_prev` | `soil_moisture` (m), `snow_water_equivalent` (m w.e.), `glacier_ice` (m of ice), `snow_age_s` (s), `glacier_mask` (0/1), `runoff` (kg/m^2/s), `snowfall`, `snowmelt`, `ice_melt` (kg/m^2/s), `land_storage_m` (m w.e.) | shared land table; output-only: `precip_land_m3s`, `evap_land_m3s`, `runoff_m3s`, `storage_change_m3s`, `unsupplied_m3s`, `balance_residual`, `snowfall_m3s`, `melt_m3s`, `n_glacier_cells`, `glacier_ice_volume_m3`, `snow_area_m2`, `soil_fraction_mean` |
+| `rivers_lakes` (variant `with_land_runoff`) | as 4b-2 but `runoff` instead of `precipitation` | as 4b-2 without `runoff` | `runoff_coeff` accepted and ignored; `precip_land_m3s` = total land runoff input, `land_loss_m3s` = 0 |
+
+Shared land table (`LAND_PARAMS`, 15, set on both land modules with `set_land_param`): `soil_capacity_m` 0.15, `snow_T` 273.15, `snow_ramp_K` 3, `melt_T` 273.15, `melt_rate_m_per_K_s` 4.6e-8 (about 4 mm w.e. per K per day), `glacier_threshold_m` 0.5, `glacier_persist_s` 31 557 600, `snow_min_m` 1e-3, `glacier_flow_coeff` 1e-5, `glacier_flow_max_frac` 0.5, `glacier_mask_min_m` 0.1, `ice_density_ratio` 0.917, `rho_water` 1000, `step_s` 2 592 000, `snow_cover_ref_m` 0.01. `LandParams::from_scheduler` reads them back.
+
+### Per-cell ledger (`land_cell_step`, land cells only; depths in m w.e. unless noted)
+`snowfall = sf(T) P dt/rho`, `sf = clamp((snow_T + ramp/2 - T)/ramp, 0, 1)` (a ramp, 0.5 at `snow_T`); `rain = P dt/rho - snowfall`. Sublimation `E_sub dt/rho` is taken from the snow pack first, then from the ice. Degree-day melt `melt_rate * max(T - melt_T, 0) * dt`: snow melts first, then ice. Soil: `S1 = S_prev + rain + melt`, `S2 = S1 - E_soil dt/rho` (E_soil = evaporation - sublimation), `runoff = max(S2 - capacity, 0)`, `S_end = S2 - runoff`. Snow age counts consecutive time with `swe > snow_min_m` and resets to 0 otherwise; once age >= `glacier_persist_s`, snow above `glacier_threshold_m` becomes ice (thickness = excess / 0.917). Closure per cell: `d(soil + swe + 0.917 ice) = P - evaporation taken - runoff`; anything the stores cannot supply is reported as `unsupplied`, never invented.
+
+### Glacier flow (`glacier_flow`)
+Along `flow_dir` and only downhill: fraction `phi = min(glacier_flow_max_frac, coeff * h * slope * dt)` of a cell's ice moves to its receiver, computed from the thickness at the start of the flow stage (order independent). Ice volume (thickness * area) is conserved. Ice that would enter an ocean cell melts at the snout and becomes runoff of the source cell. So ice can appear in a cell that is too warm to grow it only as the direct downhill neighbour of a glacier cell.
+
+### Decisions (record)
+1. **Two state sets.** `*_prev` (`soil_moisture_prev`, `snow_water_equivalent_prev`, `glacier_ice_prev`, `snow_age_s_prev`) is the committed state at the start of a step; the unsuffixed fields are the end state. Modules only read `*_prev`, so loop passes and reruns never advance time twice; `commit_land_state` (called once per step by `run_land_cycle`) copies end to prev.
+2. **Availability from the START-of-step soil**, capped by what the stores hold. Reason: exact water closure with no hidden clamps (in-step implicit coupling was rejected: evaporation could exceed storage and closure would hold only to the loop tolerance). The soil-rain feedback therefore acts from step to step, and the `water_cycle` loop converges the vapour spin-up (warm start). This is a deviation from the PART text ("loop carries the soil feedback"); recorded on purpose.
+3. **Land vs ocean** in the land-state source and in `land_water` is `ocean_mask`, not `elevation < sea_level` (lakes are land, as in 4b-1/4b-2).
+4. `runoff` is produced by `land_water`; the `rivers_lakes` variant reads it. Lakes still do not feed back into the atmosphere.
+5. Ocean cells carry no soil, snow or ice; their `runoff` is 0.
+6. The old pipeline (`add_climate_pipeline`, `MoistureSource::new()`, `RiversLakes::new()`) is untouched; `old_pipeline_is_unchanged` checks the 3b-1 law bit for bit.
+
+### Tests (`tests/part4b3.rs`, 17) and acceptance mapping
+Closure including soil and snow over 14 random steps (1e-10) and a 12-step seasonal cycle (per step 1e-8, cumulative 1e-8, plus atmosphere + land against ocean exchange and river outflow); soil within `[0, capacity]`; dry climate keeps the bucket < 1% full and a wet one > 90%, wet evaporates > 5x dry; snow and glaciers only where cold (prescribed climate: none in tropical lowlands, glaciers in every cell below 268 K after 40 steps); `water_cycle` converges (tolerance 1e-4, asserted per season); old pipeline bit-identical; wetter soil gives more global and land rain.
+Two test fixes made at the end of 4b-3 (found by review, not by running): `random_run` now seeds random initial snow and ice (from nothing, only ~0.1% of cells reach a glacier in 14 random steps, see mirror), and the geography test allows ice in the direct downhill neighbour of a glacier cell.
+
+### Verification status (4b-3)
+No Rust toolchain, no network: **not compiled, tests not run**. Every API the code and tests call was checked against the sources by hand (signatures, exports, spec names); the python mirror passes (closure 2e-14, unsupplied 0). Most likely to need a tweak when first run: (a) `water_cycle_converged` in the seasonal tests (60 passes at 1e-4; if it stops short raise `max_iters` or the tolerance in `add_land_water_pipeline`), (b) the `wetter_soil_means_more_rain` margin after a single step, (c) the glacier counts in `snow_and_glaciers_form_only_where_it_is_cold` on the level-3 mesh (flow loss in steep cells), (d) ordinary compile or borrow errors.
+
+### Open (carry into 4b-4 and later)
+- Soil-rain feedback acts with one step delay (decision 2); no in-step implicit coupling.
+- No re-evaporation of rain, no interception, no vegetation (biomes will scale capacity and availability).
+- No latent heat of melt/sublimation in the energy balance; snow cover does not change albedo yet (the albedo model still uses `ice_fraction`; `snow_cover` and `glacier_mask` are ready to feed it).
+- Glacier flow is a first-order diffusive transfer, not a mass-balance ice-dynamics model; no calving, no isostasy.
+- Rivers still do not return water to the atmosphere through lakes.
 
 ## Parameters from Part 1
 
@@ -963,6 +1009,7 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 6. Whether `boundary_len` should also carry boundary kind per edge (needed once wrap and wall mix on one mesh).
 
 ## Verification status
+- Part 4b-3: written without a Rust toolchain; not compiled, tests not run; python mirror passes (see "Part 4b-3"). 4b-2 still unconfirmed too.
 - Part 4b-2: written without a Rust toolchain; not compiled, tests not run; python mirrors pass (see "Part 4b-2").
 - Part 4b-1: reported compiled and passing by the project owner (originally written without a toolchain).
 - Part 1: compiled and all tests passing (reported by the project owner).
