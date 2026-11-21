@@ -30,7 +30,7 @@ const PARAMS: [(&str, f64); 10] = [
     ("seed_offset", 0.0),
 ];
 
-pub struct TerrainShaping { params: ParamSet }
+pub struct TerrainShaping { params: ParamSet, erosion: bool }
 
 impl Default for TerrainShaping {
     fn default() -> Self { Self::new() }
@@ -42,7 +42,16 @@ impl TerrainShaping {
         for (k, v) in PARAMS.iter() {
             params.set(k, *v);
         }
-        TerrainShaping { params }
+        TerrainShaping { params, erosion: false }
+    }
+
+    /// Part 4c-1 variant: also reads `erosion_delta` (m, cumulative, from the `erosion` module) and adds it to `tectonic_elevation` BEFORE
+    /// noise, thermal erosion and the caps. Everything else is identical; `new()` is unchanged. Do not register it in the same scheduler as
+    /// `erosion` without the 4c-3 loop (cycle).
+    pub fn with_erosion() -> Self {
+        let mut t = Self::new();
+        t.erosion = true;
+        t
     }
 }
 
@@ -56,7 +65,7 @@ impl Module for TerrainShaping {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "terrain".into(),
-            inputs: vec!["tectonic_elevation".into(), "rock_strength".into()],
+            inputs: if self.erosion { vec!["tectonic_elevation".into(), "rock_strength".into(), "erosion_delta".into()] } else { vec!["tectonic_elevation".into(), "rock_strength".into()] },
             outputs: vec!["elevation".into(), "slope".into()],
             anomaly_hooks: vec!["gravity".into(), "elevation".into(), "rock_strength".into()],
         }
@@ -93,6 +102,15 @@ impl Module for TerrainShaping {
             return Err(Error::InvalidParam("terrain: gravity must be positive in every cell".into()));
         }
         let mut e = tect;
+        if self.erosion {
+            let d = fields.data("erosion_delta")?;
+            if d.len() != n || d.iter().any(|x| !x.is_finite()) {
+                return Err(Error::InvalidParam("terrain: erosion_delta must be finite with one value per cell".into()));
+            }
+            for i in 0..n {
+                e[i] += d[i];
+            }
+        }
 
         // ---- noise ----
         let amp = p("noise_amp_m");
