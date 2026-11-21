@@ -40,13 +40,14 @@ fn names(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() 
 /// Rock strength below this is treated as this value (keeps `K_eff` finite).
 pub const MIN_STRENGTH: f64 = 1.0e-3;
 
-pub const EROSION_PARAMS: [(&str, f64); 6] = [
+pub const EROSION_PARAMS: [(&str, f64); 7] = [
     ("K", 2.0e-7),                     // m^(1-2m)/yr; with m 0.5 a 1e10 m^2 river at slope 0.01 cuts 0.2 mm/yr
     ("m_exp", 0.5),
     ("n_exp", 1.0),
     ("years_per_step", 1.0e5),
     ("max_incision_m_per_step", 500.0),
     ("gravity_exp", 1.0),              // K_eff ~ (g / 9.81)^gravity_exp
+    ("q_ref", 1.0e-8),                 // 4c-3, `with_discharge()` only: m^3/s per m^2; effective area = discharge / q_ref (same default as sediment.q_per_area)
 ];
 
 const OUTPUT_ONLY: [&str; 4] = ["eroded_volume_m3", "max_incision_m", "n_incised_cells", "n_capped_cells"];
@@ -102,6 +103,7 @@ pub fn commit_erosion_state(fields: &mut FieldStore) -> Result<()> {
 /// (cells where `max_incision_m_per_step` bound).
 pub struct Erosion {
     params: ParamSet,
+    discharge: bool,
 }
 
 impl Default for Erosion {
@@ -117,7 +119,15 @@ impl Erosion {
         for k in OUTPUT_ONLY.iter() {
             params.set(k, 0.0);
         }
-        Erosion { params }
+        Erosion { params, discharge: false }
+    }
+
+    /// Part 4c-3 variant: reads `discharge` (m^3/s, from `rivers_lakes`) instead of `drainage_area`; the effective area of the law is
+    /// `discharge / q_ref`. Rainfall now controls incision (wet basins cut faster), which closes the terrain-wind-rain loop. `new()` is unchanged.
+    pub fn with_discharge() -> Self {
+        let mut e = Self::new();
+        e.discharge = true;
+        e
     }
 }
 
@@ -125,7 +135,7 @@ impl Module for Erosion {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "erosion".into(),
-            inputs: names(&["elevation", "elevation_filled", "flow_dir", "flow_order", "drainage_area", "depression_depth", "ocean_mask", "rock_strength", "erosion_delta_prev"]),
+            inputs: names(&["elevation", "elevation_filled", "flow_dir", "flow_order", if self.discharge { "discharge" } else { "drainage_area" }, "depression_depth", "ocean_mask", "rock_strength", "erosion_delta_prev"]),
             outputs: names(&["erosion_delta", "erosion_step", "incision_rate"]),
             anomaly_hooks: names(&["gravity", "rock_strength", "time_flow_rate"]),
         }
@@ -138,7 +148,7 @@ impl Module for Erosion {
         let bad = match name {
             "K" | "max_incision_m_per_step" => value < 0.0,
             "m_exp" => value < 0.0,
-            "n_exp" | "years_per_step" => value <= 0.0,
+            "n_exp" | "years_per_step" | "q_ref" => value <= 0.0,
             _ => false,
         };
         if bad {
@@ -155,7 +165,12 @@ impl Module for Erosion {
         let filled = fields.data("elevation_filled")?.to_vec();
         let fd: Vec<i64> = fields.data("flow_dir")?.iter().map(|&v| v as i64).collect();
         let order: Vec<usize> = fields.data("flow_order")?.iter().map(|&v| v as usize).collect();
-        let area = fields.data("drainage_area")?.to_vec();
+        let area: Vec<f64> = if self.discharge {
+            let q_ref = self.params.get_or("q_ref", 1.0e-8);
+            fields.data("discharge")?.iter().map(|&q| q.max(0.0) / q_ref).collect()
+        } else {
+            fields.data("drainage_area")?.to_vec()
+        };
         let dep = fields.data("depression_depth")?.to_vec();
         let ocean = fields.data("ocean_mask")?.to_vec();
         let strength = fields.data("rock_strength")?.to_vec();

@@ -16,6 +16,7 @@ pub mod gpu;
 pub mod gradient;
 pub mod insolation;
 pub mod land_water;
+pub mod landscape;
 pub mod math;
 pub mod mesh;
 pub mod module;
@@ -79,4 +80,8 @@ pub use erosion::{add_erosion_module, commit_erosion_state, incise, run_erosion_
 pub use sediment::{
     add_sediment_module, add_surface_stage, commit_sediment_state, fill_basin, route_sediment, run_surface_steps, seed_sediment_state, seed_surface_state, set_surface_years,
     thermal_relax, transport_capacity, RouteInput, RouteParams, Routed, Sediment, SedimentBudget, SurfaceStep, ThermalReport, SEDIMENT_PARAMS,
+};
+pub use landscape::{
+    add_geology_stage, landscape_summary, run_geology, run_geology_prescribed, seed_landscape, seed_landscape_with, ClimateRun, GeoStep, GeologyParams, GeologyReport, LandscapeMask,
+    LandscapeSummary, LANDSCAPE_MAX_ITERS, LANDSCAPE_TOL,
 };

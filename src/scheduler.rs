@@ -25,6 +25,14 @@ pub struct FeedbackLoop {
     /// max|change| / max(max|value|, 1e-12) <= tolerance.
     pub tolerance: f64,
     pub max_iters: usize,
+    /// Part 4c-3: cells where this field is > 0.5 are still relaxed but do not count in the convergence test (e.g. `ocean_mask`:
+    /// river-mouth distributary switching is a discrete process that never settles). `None` = every cell counts.
+    pub exclude_where: Option<String>,
+    /// Part 4c-3: after pass `decay_after`, the relaxation weight is multiplied by `relax_decay` once per further pass
+    /// (`om_k = relaxation * relax_decay^(k - decay_after)`). 1.0 = off (default). A loop whose map has DISCRETE switches (receiver
+    /// changes, lakes appearing) chatters at a constant amplitude under fixed relaxation; a shrinking weight forces the iterates to settle.
+    pub relax_decay: f64,
+    pub decay_after: usize,
 }
 
 impl FeedbackLoop {
@@ -36,8 +44,13 @@ impl FeedbackLoop {
             relaxation: 0.5,
             tolerance: 1e-6,
             max_iters: 200,
+            exclude_where: None,
+            relax_decay: 1.0,
+            decay_after: 8,
         }
     }
+    pub fn relax_decay(mut self, decay: f64, after: usize) -> Self { self.relax_decay = decay; self.decay_after = after; self }
+    pub fn exclude_where(mut self, field: &str) -> Self { self.exclude_where = Some(field.to_string()); self }
     pub fn watch(mut self, fields: &[&str]) -> Self { self.watch = fields.iter().map(|s| s.to_string()).collect(); self }
     pub fn relaxation(mut self, w: f64) -> Self { self.relaxation = w; self }
     pub fn tolerance(mut self, t: f64) -> Self { self.tolerance = t; self }
@@ -88,6 +101,9 @@ impl Scheduler {
     }
 
     pub fn add_feedback_loop(&mut self, l: FeedbackLoop) -> Result<()> {
+        if !(l.relax_decay > 0.0 && l.relax_decay <= 1.0) {
+            return Err(Error::InvalidParam("relax_decay must be in (0, 1]".into()));
+        }
         if !(l.relaxation > 0.0 && l.relaxation <= 1.0) {
             return Err(Error::InvalidParam("relaxation must be in (0, 1]".into()));
         }
@@ -312,14 +328,20 @@ impl Scheduler {
                         if old.len() != new.len() {
                             return Err(Error::InvalidParam(format!("watched field '{w}' changed size")));
                         }
-                        let om = cfg.relaxation;
+                        let om = cfg.relaxation * cfg.relax_decay.powi(iter.saturating_sub(cfg.decay_after) as i32);
                         let mut maxd = 0.0f64;
                         let mut maxv = 0.0f64;
                         let mut relaxed = Vec::with_capacity(new.len());
-                        for (o, nw) in old.iter().zip(new.iter()) {
+                        let mask: Option<&[f64]> = match &cfg.exclude_where {
+                            Some(m) => Some(fields.data(m)?),
+                            None => None,
+                        };
+                        for (k, (o, nw)) in old.iter().zip(new.iter()).enumerate() {
                             let r = if om >= 1.0 { *nw } else { o + om * (nw - o) };
-                            maxd = maxd.max((r - o).abs());
-                            maxv = maxv.max(r.abs());
+                            if mask.map(|m| m[k] <= 0.5).unwrap_or(true) {
+                                maxd = maxd.max((r - o).abs());
+                                maxv = maxv.max(r.abs());
+                            }
                             relaxed.push(r);
                         }
                         if om < 1.0 {
