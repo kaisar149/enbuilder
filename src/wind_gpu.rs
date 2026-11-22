@@ -379,7 +379,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
             label: Some(label),
             layout: None,
             module: &module,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         })

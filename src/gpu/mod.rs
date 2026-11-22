@@ -133,7 +133,7 @@ impl GpuLaplacian {
             label: Some("laplacian"),
             layout: None,
             module: &module,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
