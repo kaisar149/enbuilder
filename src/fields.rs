@@ -56,6 +56,9 @@ pub struct FieldStore {
     base_id: u64,
     max_history: usize,
     group: Option<Group>,
+    /// Part 6: pinned cells. `field -> cell -> per-layer values`. Every module write (`write`, `put`) restores these values afterwards, so a locked cell
+    /// never changes through the pipeline; only `set_cells` (a user edit) and `undo`/`redo` bypass them.
+    locks: BTreeMap<String, BTreeMap<u32, Vec<f64>>>,
 }
 
 impl FieldStore {
@@ -69,6 +72,7 @@ impl FieldStore {
             base_id: 0,
             max_history: 64,
             group: None,
+            locks: BTreeMap::new(),
         }
     }
     pub fn with_max_history(mut self, n: usize) -> Self { self.max_history = n.max(1); self }
@@ -198,6 +202,7 @@ impl FieldStore {
             s.touch(name)?;
             let fld = s.fields.get_mut(name).ok_or_else(|| Error::UnknownField(name.into()))?;
             f(&mut fld.data);
+            s.enforce_locks(name);
             Ok(())
         })
     }
@@ -216,11 +221,100 @@ impl FieldStore {
                 if let Some(f) = s.fields.get_mut(name) {
                     f.data = data;
                 }
+                s.enforce_locks(name);
                 Ok(())
             } else {
                 s.create_inner(name, layers, data)
             }
         })
+    }
+
+
+    // ---- Part 6: locks, user edits, fork ----
+    fn enforce_locks(&mut self, name: &str) {
+        if let (Some(l), Some(f)) = (self.locks.get(name), self.fields.get_mut(name)) {
+            let ly = f.layers;
+            for (&c, v) in l.iter() {
+                let b = c as usize * ly;
+                f.data[b..b + ly].copy_from_slice(v);
+            }
+        }
+    }
+
+    /// Pin `cells` of `name` at their CURRENT values. From now on module writes cannot change them.
+    pub fn lock_cells(&mut self, name: &str, cells: &[u32]) -> Result<()> {
+        let f = self.fields.get(name).ok_or_else(|| Error::UnknownField(name.into()))?;
+        let ly = f.layers;
+        let mut add = Vec::with_capacity(cells.len());
+        for &c in cells {
+            if c as usize >= self.n_cells {
+                return Err(Error::InvalidParam(format!("lock: cell {c} out of range")));
+            }
+            add.push((c, f.data[c as usize * ly..(c as usize + 1) * ly].to_vec()));
+        }
+        self.locks.entry(name.to_string()).or_default().extend(add);
+        Ok(())
+    }
+    pub fn unlock_cells(&mut self, name: &str, cells: &[u32]) {
+        if let Some(l) = self.locks.get_mut(name) {
+            for c in cells {
+                l.remove(c);
+            }
+            if l.is_empty() {
+                self.locks.remove(name);
+            }
+        }
+    }
+    pub fn unlock_field(&mut self, name: &str) { self.locks.remove(name); }
+    pub fn clear_locks(&mut self) { self.locks.clear(); }
+    pub fn is_locked(&self, name: &str, cell: usize) -> bool { self.locks.get(name).map(|l| l.contains_key(&(cell as u32))).unwrap_or(false) }
+    /// Sorted locked cell indices of one field.
+    pub fn locked_cells(&self, name: &str) -> Vec<u32> { self.locks.get(name).map(|l| l.keys().copied().collect()).unwrap_or_default() }
+    pub fn locked_fields(&self) -> Vec<String> { self.locks.keys().cloned().collect() }
+
+    /// USER edit: set `cells` of `name` to `values` (`cells.len() * layers` numbers, cell-major). Bypasses locks; a cell that is already
+    /// locked keeps being locked at the NEW value. With `pin` the cells are locked at the new values. One undo step when called outside a group.
+    pub fn set_cells(&mut self, name: &str, cells: &[u32], values: &[f64], pin: bool) -> Result<()> {
+        let ly = self.layers(name)?;
+        if values.len() != cells.len() * ly {
+            return Err(Error::InvalidParam(format!("set_cells '{name}': need {} values, got {}", cells.len() * ly, values.len())));
+        }
+        if let Some(&c) = cells.iter().find(|&&c| c as usize >= self.n_cells) {
+            return Err(Error::InvalidParam(format!("set_cells: cell {c} out of range")));
+        }
+        if values.iter().any(|v| !v.is_finite()) {
+            return Err(Error::NonFinite(name.into()));
+        }
+        self.with_auto("set_cells", |s| {
+            s.touch(name)?;
+            if let Some(f) = s.fields.get_mut(name) {
+                for (k, &c) in cells.iter().enumerate() {
+                    f.data[c as usize * ly..(c as usize + 1) * ly].copy_from_slice(&values[k * ly..(k + 1) * ly]);
+                }
+            }
+            for (k, &c) in cells.iter().enumerate() {
+                let already = s.locks.get(name).map(|l| l.contains_key(&c)).unwrap_or(false);
+                if pin || already {
+                    s.locks.entry(name.to_string()).or_default().insert(c, values[k * ly..(k + 1) * ly].to_vec());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// An independent copy: same fields and locks, EMPTY history (used for scratch solves; its commit ids restart from this store's current id).
+    pub fn fork(&self) -> FieldStore {
+        FieldStore {
+            n_cells: self.n_cells,
+            fields: self.fields.clone(),
+            undo: VecDeque::new(),
+            redo: Vec::new(),
+            next_id: self.next_id,
+            base_id: self.current_version(),
+            max_history: self.max_history,
+            group: None,
+            locks: self.locks.clone(),
+        }
     }
 
     // ---- history ----

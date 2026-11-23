@@ -6,6 +6,7 @@ pub mod biomes;
 pub mod budget;
 pub mod consts;
 pub mod derived;
+pub mod dirty;
 pub mod domain;
 pub mod energy;
 pub mod erosion;
@@ -16,6 +17,7 @@ pub mod generators;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod gradient;
+pub mod incremental;
 pub mod insolation;
 pub mod land_water;
 pub mod landscape;
@@ -42,6 +44,7 @@ pub mod terrain;
 pub mod transport;
 pub mod vegetation;
 pub mod testmods;
+pub mod toyclimate;
 pub mod testworld;
 pub mod wind;
 pub mod wind_gpu;
@@ -56,7 +59,7 @@ pub use energy::{add_energy_stage, add_energy_stage_with, seed_temperature, Albe
 pub use insolation::Insolation;
 pub use tectonics::{PaintedPlates, PlateDef, Tectonics};
 pub use terrain::TerrainShaping;
-pub use scheduler::{FeedbackLoop, LoopReport, RunReport, Scheduler};
+pub use scheduler::{FeedbackLoop, LoopReport, ModuleEvent, RunReport, Scheduler, Trace, TraceCfg};
 pub use budget::{add_climate_pipeline, mean_evap_mm_day, mean_precip_mm_day, run_season, SeasonReport, WaterBudget};
 pub use gradient::GradientOp;
 pub use pressure::{add_atmosphere_stage, PressureModel};
@@ -96,3 +99,5 @@ pub use vegetation::{
     clear_vegetation, land_surface_means, run_vegetation_loop, seasonal_climate, seed_vegetation, VegIteration, VegetationParams, VegetationReport, VEG_FIELDS,
 };
 pub use derived::{add_derived_stage, habitability, mean_slope, ramp, soil_fertility, travel_difficulty, DerivedMaps, DerivedParams, DERIVED_INPUTS};
+pub use dirty::{downstream_fields, extend_downwind, grow_region, plan_dirty, DirtyPlan, InfluenceSpec, Region};
+pub use incremental::{pin_cells, resolve_edit, solve_full, Edit, FieldReport, IncrementalConfig, IncrementalReport};
