@@ -2,8 +2,10 @@
 //! Part 1 = foundations (domain, meshes, fields, scheduler); Part 2 = terrain and energy (stages A, B);
 //! Part 3a = diagnostic pressure and wind (stage C, air side); Part 3b-1 = evaporation sources; Part 3b-2 = conservative moisture transport; Part 3b-3 = lift and precipitation; Part 3b-4 = budget and seasons; Part 3c-1 = stepped wind (CPU); Part 4a-1 = sea level, ocean mask, wind stress; Part 4a-2b = wind-stress curl and beta; Part 4a-2c = gyres and current field (beta off); Part 4a-2d = beta term and BiCGSTAB; Part 4a-2e = wall and waterworld rules, tuned defaults, validation helpers (`ocean_validation`); Part 4a-3 = ocean heat transport and SST feedback (`ocean_heat`); Part 4a-4 = upwelling, thermohaline, sea ice, nutrients (`ocean_secondary`); Part 3c-5 = backend switch (`add_atmosphere_stage_stepped_with`, `add_climate_pipeline_with`); Part 4b-1 = depression handling, flow direction, drainage area (`flow_routing`); Part 4b-2 = runoff, discharge, rivers, fill-and-spill lakes (`rivers_lakes`); Part 4b-3 = soil moisture, snow, glaciers, land sublimation and soil-driven runoff (`land_water`); Part 4c-1 = stream power erosion (`erosion`, `TerrainShaping::with_erosion`); Part 4c-2 = sediment transport, deposition and thermal erosion (`sediment`, `TerrainShaping::with_net_erosion`).
 pub mod backend;
+pub mod biomes;
 pub mod budget;
 pub mod consts;
+pub mod derived;
 pub mod domain;
 pub mod energy;
 pub mod erosion;
@@ -38,6 +40,7 @@ pub mod sediment;
 pub mod tectonics;
 pub mod terrain;
 pub mod transport;
+pub mod vegetation;
 pub mod testmods;
 pub mod testworld;
 pub mod wind;
@@ -85,3 +88,11 @@ pub use landscape::{
     add_geology_stage, landscape_summary, run_geology, run_geology_prescribed, seed_landscape, seed_landscape_with, ClimateRun, GeoStep, GeologyParams, GeologyReport, LandscapeMask,
     LandscapeSummary, LANDSCAPE_MAX_ITERS, LANDSCAPE_TOL,
 };
+pub use biomes::{
+    add_biome_stage, biome_summary, capture_season, classify_biomes, koppen_class, koppen_group, pet_mm_day, run_climate_seasons, season_normals, warm_half, BiomeDef, BiomeSummary, BiomeTable,
+    Biomes, ClimateNormals, Condition, Koppen, Normals, NormalsParams, KOPPEN_CODES, NORMAL_FIELDS,
+};
+pub use vegetation::{
+    clear_vegetation, land_surface_means, run_vegetation_loop, seasonal_climate, seed_vegetation, VegIteration, VegetationParams, VegetationReport, VEG_FIELDS,
+};
+pub use derived::{add_derived_stage, habitability, mean_slope, ramp, soil_fertility, travel_difficulty, DerivedMaps, DerivedParams, DERIVED_INPUTS};

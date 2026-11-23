@@ -1,0 +1,40 @@
+# Default Earth-like biome table. First matching row wins; order matters.
+# Fields: clim_* come from climate_normals (deg C, mm/yr); ocean_mask and glacier_mask come from the pipeline.
+# Effects: albedo (0..1), evap (multiplier on land moisture availability), rough (canopy height, m).
+biome ocean color=#1f4e8c albedo=0.06 evap=1 rough=0
+  ocean_mask >= 0.5
+biome glacier color=#f4f8ff albedo=0.7 evap=0 rough=0
+  glacier_mask >= 0.5
+biome polar_ice color=#dfeaf2 albedo=0.65 evap=0.05 rough=0
+  clim_t_warm_c < 0
+biome tundra color=#b7c4a0 albedo=0.25 evap=0.3 rough=0.2
+  clim_t_warm_c < 10
+biome hot_desert color=#e6c36a albedo=0.35 evap=0.1 rough=0.05
+  clim_aridity < 0.2
+  clim_t_mean_c >= 18
+biome cold_desert color=#c9b98f albedo=0.3 evap=0.1 rough=0.1
+  clim_aridity < 0.2
+biome thorn_scrub color=#c4a45a albedo=0.28 evap=0.3 rough=2
+  clim_aridity < 0.4
+  clim_t_mean_c >= 18
+biome steppe color=#c9c77a albedo=0.24 evap=0.4 rough=0.5
+  clim_aridity < 0.4
+biome tropical_rainforest color=#0b6b2e albedo=0.12 evap=1.4 rough=30
+  clim_t_cold_c >= 18
+  clim_aridity >= 1.1
+biome tropical_seasonal_forest color=#2f8f3a albedo=0.14 evap=1.2 rough=20
+  clim_t_cold_c >= 18
+  clim_aridity >= 0.6
+biome savanna color=#b5b848 albedo=0.2 evap=0.7 rough=3
+  clim_t_cold_c >= 18
+biome mediterranean color=#8a9a3c albedo=0.18 evap=0.6 rough=3
+  clim_t_cold_c >= 0
+  clim_p_summer_frac < 0.35
+biome taiga color=#2e5d4b albedo=0.13 evap=0.8 rough=15
+  clim_t_mean_c < 6
+biome temperate_grassland color=#a7c957 albedo=0.2 evap=0.6 rough=0.6
+  clim_aridity < 0.8
+biome temperate_forest color=#4f8f4a albedo=0.15 evap=1 rough=20
+  clim_t_mean_c >= 6
+  clim_aridity >= 0.8
+biome mixed_woodland color=#6a994e albedo=0.17 evap=0.9 rough=10

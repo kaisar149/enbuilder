@@ -76,6 +76,16 @@ pub(crate) fn surface_friction(domain: &Domain, z: &[f64], sea: f64, drag_ocean:
     r
 }
 
+/// Part 5b: canopy friction. Adds `drag_land * canopy_m / rough_ref` to the friction of land cells (`z >= sea`), so a 30 m forest at the
+/// default `drag_rough_ref_m` (500 m) raises the land drag by 6%. `canopy_m` is the field `veg_roughness_m`; negative or non-finite entries count as 0.
+pub fn add_canopy_friction(r: &mut [f64], z: &[f64], sea: f64, canopy_m: &[f64], drag_land: f64, rough_ref: f64) {
+    for i in 0..r.len() {
+        if z[i] >= sea && canopy_m[i].is_finite() && canopy_m[i] > 0.0 {
+            r[i] += drag_land * canopy_m[i] / rough_ref;
+        }
+    }
+}
+
 /// u = (r a - f k x a) / (r^2 + f^2) with a = -grad(p) / rho.
 pub(crate) fn balance(domain: &Domain, grad_p: &[Vec3], rho: &[f64], r: &[f64], f: &[f64]) -> Vec<Vec3> {
     (0..domain.n_cells())
@@ -152,7 +162,13 @@ impl Module for DiagnosticWind {
         let sea = p("sea_level");
         let zc: Vec<f64> = z.iter().map(|&v| v.max(sea)).collect();
 
-        let r = surface_friction(domain, &z, sea, p("drag_ocean"), p("drag_land"), p("drag_rough_ref_m"));
+        let mut r = surface_friction(domain, &z, sea, p("drag_ocean"), p("drag_land"), p("drag_rough_ref_m"));
+        if fields.has("veg_roughness_m") {
+            let c = fields.data("veg_roughness_m")?;
+            if c.len() == r.len() {
+                add_canopy_friction(&mut r, &z, sea, c, p("drag_land"), p("drag_rough_ref_m"));
+            }
+        }
 
         let mut u = balance(domain, &op.gradient(domain, &psl), &rho, &r, &f);
 

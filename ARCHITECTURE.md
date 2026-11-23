@@ -1,4 +1,7 @@
-# ARCHITECTURE.md (after PART 4c-3: `landscape` loop, geological time driver, Part 4 close-out. PART 4 IS COMPLETE: full `cargo test` passes on the owner's machine (271 tests before 4c-3, plus the 15 in `tests/part4c3.rs`); Part 5 (biomes) can start)
+# ARCHITECTURE.md (after PART 5a/5b/5c: climate normals, Koppen, biome table as data, vegetation feedback, derived land maps. PART 5 IS WRITTEN BUT NOT COMPILED: no Rust toolchain in the sandbox; see "Part 5" at the end)
+
+**Part 5 (latest session, COMPILED)** adds `src/biomes.rs` (recovered from a lost session), `src/vegetation.rs`, `src/derived.rs`, `data/earth_biomes.txt` (reconstructed), `tests/part5.rs` (recovered, 19 tests), `tests/part5b.rs` (14), `tests/part5c.rs` (6), `reference/mirror_5a.py`, `cases_5a.py`, `mirror_5b.py`, `mirror_5c.py`, and small optional-field hooks in `energy.rs`, `land_water.rs`, `wind.rs`, `wind_stepped.rs`. Run `cargo test --test part5 --test part5b --test part5c`, then `cargo test`, and send the compiler output back. See the section "Part 5" at the end of this file.
+
 
 **Part 4c-3 (latest session, VERIFIED: compiled, probed on L4 and the full `cargo test` passes on the owner's machine)** adds `src/landscape.rs` (loop `landscape`, `add_geology_stage`, `seed_landscape(_with)`, `run_geology`, `run_geology_prescribed`, `landscape_summary`, `LandscapeMask`), `Erosion::with_discharge()`, `FeedbackLoop::exclude_where`, `tests/part4c3.rs` (15 tests), `examples/geology_probe.rs`, and the section "Part 4c-3" plus "Part 4 close-out". It also adds `FeedbackLoop::relax_decay` (scheduler, default off), `examples/landscape_diag.rs`, and the measured Earth-like numbers in "Part 4 close-out".
 
@@ -1197,3 +1200,49 @@ Generators: radius, subdivision, half_side, cells_per_edge, cell_size, shape, bo
 - Part 3a numerics validated in NumPy: `reference/wind_mirror.py` + `reference/run_wind.py` mirror `gradient.rs`, `pressure.rs`, `wind.rs` formula for formula; test thresholds in `tests/part3.rs` were set from that mirror with wide margins (band counts 0/3/9, zonal winds, tidal flow, barrier slowdown ~0.77x). Not validated: Rust compilation, exact Rust numbers on the cube and wrapped plane (smoke test only checks finiteness, `<= max_wind`, determinism).
 - Parts 1-3b and 3c-1 all compiled and pass in the sandbox (cargo 1.97, offline; 82 tests total, no warnings). Water conservation including rain is tested in 3b-3 and 3b-4.
 - Part 4a-1 and 3c-5 (later compiled in the 4a-2a session): `cargo test` passes everything, zero warnings; the 3c-5 benchmark/GPU numbers were measured later (see "Benchmark table: MEASURED"). Original note: Part 3c-5 was written without a Rust toolchain; **not compiled, tests not run, benchmarks not run**. Static check only (balanced delimiters). Please run `cargo test` (expect 98 existing + 6 new tests, zero warnings) and the examples, then fill in the PENDING tables.
+
+## Part 5: climate classes, biomes, vegetation feedback, derived maps (NOT COMPILED: written without a Rust toolchain)
+
+Files: `src/biomes.rs` (5a), `src/vegetation.rs` (5b), `src/derived.rs` (5c), `data/earth_biomes.txt`. `lib.rs` gained `pub mod biomes; pub mod derived; pub mod vegetation;` and `pub use` blocks for each. `data/earth_biomes.txt` is read with `include_str!("../data/earth_biomes.txt")` from `src/biomes.rs`, so `data/` sits next to `src/` in the crate root.
+
+### 5a: normals, Koppen, the biome table (`biomes.rs`)
+- Seasonal inputs (one layer per season, equal blocks of the year in orbit order): `season_temperature` (K), `season_precipitation` (kg/m^2/s), `season_soil_moisture` (m). Produced by `run_climate_seasons` (real pipeline: runs `run_land_cycle` per season and `capture_season`) or supplied directly (painted/analytic climates, tests). With 4 seasons a "month count" is quantised to 0, 3, 6, 9, 12. The climate has no thermal inertia, so seasonal swings (and D classes) are exaggerated.
+- Module `climate_normals` -> 13 fields (1 layer): `clim_t_mean_c`, `clim_t_cold_c`, `clim_t_warm_c`, `clim_t_range_k`, `clim_p_annual` (mm/yr), `clim_p_dry`, `clim_p_wet` (annual-equivalent mm/yr), `clim_p_summer_frac` (share of precipitation in the warm half), `clim_months_warm`, `clim_gdd` (>5 C), `clim_pet` (mm/yr, `pet_slope*max(T,0)^pet_exp` per day), `clim_aridity` (= p_annual / pet), `clim_soil_m`. Params `pet_slope` 0.09, `pet_exp` 1.2, `year_s` 3.15576e7.
+- Module `koppen` -> `koppen` (index into `KOPPEN_CODES`, 31 entries, 0 = ocean) and `koppen_group` (0 ocean, 1 A .. 5 E). Peel et al. 2007 thresholds on seasons; hemisphere independent (warm half = the ceil(n/2) warmest seasons).
+- Module `biomes`: first matching row of a `BiomeTable` wins; no match -> id `len()` ("unclassified"). Outputs `biome` (id as f64), `biome_albedo`, `biome_evap_factor`, `biome_roughness_m`, `biome_color` (3 layers 0..1). Inputs are exactly the fields the table reads (the scheduler orders it). Params `fallback_albedo` 0.22, `fallback_evap_factor` 1, `fallback_roughness_m` 0; output-only `n_unclassified`, `n_biomes_present`. Only layer 0 of a layered field is read. The input list is fixed at construction: to change the table build a new `Biomes`/scheduler (`classify_biomes` does that).
+- **Biome table text format** (one item per line, `#` begins a comment at a word start, names have no spaces):
+```
+biome hot_desert color=#e6c36a albedo=0.35 evap=0.1 rough=0.05
+  clim_aridity < 0.2
+  clim_t_mean_c >= 18
+  clim_p_annual in 0..250
+```
+  Operators `>=`, `<`, `in a..b` (`a <= x < b`, `inf`/`-inf` allowed). Keys `color` (#rrggbb, default #808080), `albedo` (0..1, default 0.22), `evap` (>= 0, default 1), `rough` (>= 0 m, default 0). A biome with no conditions is a catch-all. Any field name in the store may be used (also painted ones). `BiomeTable::parse` / `to_text` round-trip; errors name the line.
+- Default table `data/earth_biomes.txt` (reconstructed this session; the original was lost), 16 rows in this order: ocean, glacier, polar_ice, tundra, hot_desert, cold_desert, thorn_scrub, steppe, tropical_rainforest, tropical_seasonal_forest, savanna, mediterranean, taiga, temperate_grassland, temperate_forest, mixed_woodland (catch-all, so a default-table run never leaves a cell unclassified). It reads `ocean_mask`, `glacier_mask` and `clim_*` only. Constraints from `tests/part5.rs`: the text `clim_aridity < 0.2` and `albedo=0.35` belong to hot_desert.
+- Wiring: `add_biome_stage(&mut Scheduler, &BiomeTable)`; `classify_biomes(domain, fields, table) -> BiomeSummary` (area per biome over land; `land_share(name)`).
+
+### 5b: vegetation feedback (`vegetation.rs`)
+- Coupling fields (the relaxed surface state, one layer, written only by the loop): `veg_albedo`, `veg_evap_factor`, `veg_roughness_m` (`VEG_FIELDS`). Older modules read them only if present, so absent = bit-identical behaviour:
+  - `AlbedoModel` (all variants): land surface albedo = `veg_albedo` instead of `albedo_land` (ice ramp, water, cloud unchanged).
+  - `LandSupply`: `land_availability = clamp(veg_evap_factor * soil / soil_capacity, 0, 1)`; `soil_evap_cap`, `sublimation_cap` untouched (the stores still cap the loss, so the land water budget keeps closing; NOT re-verified by a test yet).
+  - `DiagnosticWind` and `SteppedWind`: land friction `r += drag_land * veg_roughness_m / drag_rough_ref_m` (`wind::add_canopy_friction`, pub). The GPU path takes `r` from the same call, so it inherits the hook.
+- `run_vegetation_loop(domain, fields, table, &VegetationParams, &mut climate_closure) -> VegetationReport`. OUTER loop: closure runs a climate year -> `classify_biomes` -> on land cells `veg_x += r_k (biome_x - veg_x)`, `r_k = relax * relax_decay^k` -> stop when the largest land step is under `tol_albedo` 0.005 / `tol_evap` 0.02 / `tol_rough_m` 0.5. Start state is the bare-land baseline (`baseline_albedo` 0.22, `baseline_evap` 1, `baseline_rough_m` 0); existing `veg_*` fields are a warm start. Defaults `relax` 0.5, `relax_decay` 0.7, `max_iters` 12. The geometric decay is the convergence guarantee (steps are summable even if a cell flips biome every pass). Not converging within `max_iters` is reported (`converged == false`), not an error. `VegIteration` records relax, `changed_frac` (land cells whose biome id changed; 1 on pass 0), the three max steps and the area-weighted land means.
+- `seasonal_climate(&mut scheduler, &seasons, years)` is the closure for the real pipeline (`add_land_water_pipeline` + `seed_land_state`; land state carries between passes). Also `seed_vegetation`, `clear_vegetation`, `land_surface_means`.
+- Design decision: the loop is outside the scheduler (a `FeedbackLoop` runs one climate state, but biomes need annual statistics). `FeedbackLoop` is still what converges the in-year loops (`ice_albedo`, `water_cycle`).
+
+### 5c: derived land maps (`derived.rs`)
+Module `derived_maps` (after `add_biome_stage`, plus an external `elevation`): `soil_fertility`, `habitability`, `travel_difficulty` (1 layer; ocean 0; glacier cells 0, 0, travel +2). Formulas and parameters (`aridity_lo/hi` 0.1/1, `gdd_lo/hi` 300/2500, `soil_ref_m` 0.1, `fresh_lo/hi` 0.05/0.4, `slope_gain` 4, `canopy_ref_m` 30, `sea_level` 0) are in the module header and `reference/mirror_5c.py`. Outputs only (no feedback).
+
+### Mirror results (Python, same formulas; the Rust code has not run)
+- Analytic Earth-like climate (`analytic_cell` of `tests/part5.rs`, 2562 Fibonacci points as a stand-in for L4): equatorial forest 0.92 (test >= 0.7), equatorial Koppen A 1.0, subtropical dry 0.39 (>= 0.2), subtropical hot_desert 0.087 (>= 0.03), polar tundra/ice 0.986, boreal taiga 0.767 (>= 0.55), boreal Koppen D 0.826 (>= 0.65). Editing `clim_aridity < 0.2` -> `< 0.4`: hot_desert 2.0% -> 9.0%, thorn_scrub 7.0% -> 0. All 15 Koppen hand cases and both normals hand cases match.
+- Toy vegetation loop (`tests/part5b.rs`): 8 passes to converge, 6 without coupling; hot_desert 6 cells with feedback vs 4 without; driest cell 100 -> 61.7 mm/yr and 2.2 K cooler.
+
+### Verification status (Part 5)
+NOTHING compiled or run. Expect small compile errors (closure lifetimes in `seasonal_climate`, borrow of `fields` in the hook edits). The smoke tests (`the_land_water_pipeline_feeds_the_biome_stage`, `the_real_pipeline_runs_the_vegetation_loop`) have loose thresholds and print numbers; paste them back. The level-4 geodesic cell count differs from the mirror's 2562, so band shares may move by a few percent.
+
+### Open
+- Land water budget closure with `veg_evap_factor` active is argued (store caps untouched) but not tested.
+- The wind hook is unit-tested through `add_canopy_friction` only; no full-wind regression with canopy.
+- Koppen/biome classes ignore thermal inertia (no ocean-moderated seasonality yet), so D classes are over-represented on a real pipeline run.
+- No elevation/altitude biome row (alpine) in the default table; add with `elevation` once a `clim_` field for it exists.
+- Biomes do not feed back into soil fertility or erosion yet (5c is output-only).

@@ -36,7 +36,7 @@ use crate::backend::PackedMesh;
 use crate::wind_gpu::{solve_f32_emulated, StepConfig, StepStatic};
 #[cfg(feature = "gpu")]
 use crate::wind_gpu::solve_gpu;
-use crate::wind::{balance, soft_cap, surface_friction, PARAMS};
+use crate::wind::{add_canopy_friction, balance, soft_cap, surface_friction, PARAMS};
 
 const EXTRA: [(&str, f64); 10] = [
     ("dt_max_s", 600.0),
@@ -188,7 +188,13 @@ impl Module for SteppedWind {
         let op = GradientOp::new(domain);
         let sea = p("sea_level");
         let zc: Vec<f64> = z.iter().map(|&v| v.max(sea)).collect();
-        let r = surface_friction(domain, &z, sea, p("drag_ocean"), p("drag_land"), p("drag_rough_ref_m"));
+        let mut r = surface_friction(domain, &z, sea, p("drag_ocean"), p("drag_land"), p("drag_rough_ref_m"));
+        if fields.has("veg_roughness_m") {
+            let c = fields.data("veg_roughness_m")?;
+            if c.len() == r.len() {
+                add_canopy_friction(&mut r, &z, sea, c, p("drag_land"), p("drag_rough_ref_m"));
+            }
+        }
 
         // constant forcing a = -grad(p)/rho
         let gp = op.gradient(domain, &psl);

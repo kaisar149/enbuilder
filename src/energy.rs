@@ -104,6 +104,17 @@ impl Module for AlbedoModel {
         } else {
             None
         };
+        // Part 5b: optional vegetation albedo of the land surface (field `veg_albedo`, written by `run_vegetation_loop`).
+        // Absent -> `albedo_land` as before. Only land (elevation >= sea_level) reads it; ice, water and cloud are unchanged.
+        let veg: Option<Vec<f64>> = if fields.has("veg_albedo") {
+            let v = fields.data("veg_albedo")?;
+            if v.len() != n {
+                return Err(Error::InvalidParam("albedo: 'veg_albedo' must have 1 layer".into()));
+            }
+            Some(v.to_vec())
+        } else {
+            None
+        };
         let (mut alb, mut ice) = (vec![0.0; n], vec![0.0; n]);
         for i in 0..n {
             let mut f = ((hi - t[i]) / (hi - lo)).clamp(0.0, 1.0);
@@ -112,7 +123,11 @@ impl Module for AlbedoModel {
                     f = si[i].clamp(0.0, 1.0);
                 }
             }
-            let surf = if e[i] < p("sea_level") { p("albedo_water") } else { p("albedo_land") };
+            let land_a = match &veg {
+                Some(v) if v[i].is_finite() => v[i].clamp(0.0, 1.0),
+                _ => p("albedo_land"),
+            };
+            let surf = if e[i] < p("sea_level") { p("albedo_water") } else { land_a };
             let a0 = f * p("albedo_ice") + (1.0 - f) * surf;
             alb[i] = a0 + (1.0 - a0) * p("cloud_albedo");
             ice[i] = f;

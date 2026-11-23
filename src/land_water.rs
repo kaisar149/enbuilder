@@ -358,6 +358,17 @@ impl Module for LandSupply {
         if [ocean.len(), soil.len(), swe.len(), ice.len()].iter().any(|&l| l != n) {
             return Err(Error::InvalidParam("land_supply: every input field must have one value per cell".into()));
         }
+        // Part 5b: optional vegetation factor on the evaporative demand of land (field `veg_evap_factor`, >= 0). Absent -> 1.
+        // It scales the availability only; the stores (`soil_evap_cap`, `sublimation_cap`) still cap what can leave, so water stays conserved.
+        let veg: Option<Vec<f64>> = if fields.has("veg_evap_factor") {
+            let v = fields.data("veg_evap_factor")?.to_vec();
+            if v.len() != n {
+                return Err(Error::InvalidParam("land_supply: 'veg_evap_factor' must have one value per cell".into()));
+            }
+            Some(v)
+        } else {
+            None
+        };
         let mut avail = vec![1.0; n];
         let mut soil_cap = vec![0.0; n];
         let mut sub_cap = vec![0.0; n];
@@ -368,7 +379,11 @@ impl Module for LandSupply {
             }
             let s = soil[c].max(0.0);
             let w = swe[c].max(0.0) + p.ice_density_ratio * ice[c].max(0.0);
-            avail[c] = (s / p.soil_capacity_m).clamp(0.0, 1.0);
+            let vf = match &veg {
+                Some(v) if v[c].is_finite() && v[c] >= 0.0 => v[c],
+                _ => 1.0,
+            };
+            avail[c] = (vf * s / p.soil_capacity_m).clamp(0.0, 1.0);
             soil_cap[c] = p.rho_water * s / p.step_s;
             sub_cap[c] = p.rho_water * w / p.step_s;
             cover[c] = w / (w + p.snow_cover_ref_m);
