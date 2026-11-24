@@ -1246,3 +1246,32 @@ NOTHING compiled or run. Expect small compile errors (closure lifetimes in `seas
 - Koppen/biome classes ignore thermal inertia (no ocean-moderated seasonality yet), so D classes are over-represented on a real pipeline run.
 - No elevation/altitude biome row (alpine) in the default table; add with `elevation` once a `clim_` field for it exists.
 - Biomes do not feed back into soil fertility or erosion yet (5c is output-only).
+
+## Part 6: edit propagation, diff, provenance, explainer (COMPILED; 23 tests in `tests/part6a.rs`, 13 in `tests/part6b.rs`; full `cargo test` green)
+
+Compiled and run in the AI sandbox (rustc 1.75 via apt, scratch `Cargo.toml` with edition 2021 and no dependencies). Edition-2024 and the optional `wgpu` feature were NOT exercised there; run `cargo test` on your machine to confirm.
+
+### Dirty-region API (6a; `dirty.rs`, `incremental.rs`)
+- `InfluenceSpec` (per-field radius in metres, downwind carry, wind field); `grow_region` (Dijkstra on edge distances) -> `Region {cells, dist}`; `plan_dirty` -> `DirtyPlan` (per-field regions of the fields downstream of the edit, `downstream_fields` follows the module graph).
+- `resolve_edit(sched, domain, fields, &Edit, &IncrementalConfig) -> IncrementalReport`: applies the edit, solves WARM on a scratch fork, commits each field only inside its (widened) region, one undo group, rolls back on error. `solve_full` is the reference.
+- HONEST STATUS: modules still recompute every cell (`modules_honor_dirty = false`). Benefit today: warm start and exact locality (outside the regions every value is bit-identical). A far-field guard adds cells outside the region whose change exceeds `max(border_tol x peak, solver noise)`, so "incremental == full within tolerance" holds even for global coupling (energy balance shifts ~2 K everywhere for one lake).
+- Locks/pins: `FieldStore::lock_cells`, `set_cells(.., pin)`, `fork`. An UNPINNED edit of a module-produced field is only a warm start (the producer wins); `Edit::pinned()` overrides.
+- `Scheduler::set_trace(Some(TraceCfg{front_rel_tol}))` / `take_trace()`: `Trace {ticks, front, touched, events, abs_tol}`. A tick is one module execution. 6b change: the trace tolerance uses `range = max(max-min, 0.01 x max|x|)` so a nearly constant field (range ~ rounding noise) does not get a tolerance of ~0.
+
+### Diff format (6b; `diff.rs`)
+- `ChangeSet {since, n_cells, fields: BTreeMap<name, FieldChange{layers, entries: Vec<(flat idx, old, new)>, created}>}`; `ChangeSet::from_store(fields, since_version)` (O(changed cells), `Error::HistoryTruncated` if history is gone), `of_commit(fields, commit)`, `has`, `field_names`, `signed(field)` (dense, layer with largest |change|), `cell_change(field, cell) -> Option<(old,new)>`, `peak`, `cells`.
+- `field_diff(domain, fields, &cs, field, seeds, trace, &DiffOptions) -> FieldDiff {signed, abs, before, after, front, dist, order, summary}`. `order` = changed cells sorted by `(front tick, surface distance from the edit, cell)`: the animation order. `frame(t)`, `frames(n)`, `reveal_time(cell)`. `DiffSummary {changed_cells, peak_abs, mean_abs, sum_signed, changed_area, global_mean_shift (area weighted), reach_m (distance of cells >= reach_frac x peak), front_ticks}`.
+- Measured behaviour (tests): the front crosses modules in dependency order (albedo < temperature < humidity); inside the ice-albedo loop the ALBEDO front creeps outward over several passes; TEMPERATURE in the energy stage responds everywhere on the first pass (global energy balance, no front), and the diff says so (one tick, order by distance).
+
+### Provenance format (6b; `provenance.rs`)
+- `Provenance`: per field and cell a `u64` bitmask over a table of at most `MAX_CONTRIBUTORS = 64` names: `module:<name>` (static `from_producers`, dynamic `record_solve` from `Trace.touched`: modules that wrote the cell while it deviated), `edit:<label>` (user edit; a warm start only when the field has a producer), `pin:<label>` (pinned edit = override), `anomaly:<name>` (`mark_anomaly`, for Part 8). `record_edit(edit, report)`, `forget(contributor)` (after undo), `contributors`, `has`, `cells_with`.
+- Binary: `to_bytes`/`from_bytes`, magic `ENPROV01`, all little-endian: n_cells u64; table (count u32; per name len u32 + utf8); masks (count u32; per field name as above + n_cells x u64). Damaged/truncated/extended data is rejected.
+
+### Explainer (6b)
+- `explain(domain, specs, &changeset, &provenance, field, cell, &ExplainOptions) -> Explanation {chain, origin, stopped}`; `Explanation::text()`. Chain is effect first. Each `Link {field, cell, old, new, module, hop, dist_to_cause_m, contributors, also, via_feedback}`.
+- Walk: at (field, cell) stop if the cell carries an origin (`pin:`, `anomaly:`, or `edit:` on a field no module produces; otherwise `external:<field>` when nothing produces the field). Else take the producer's changed inputs, rank candidates by `relative change (change / peak change of that input) / (1 + distance / proximity)`, prefer a cause within `local_radius_m` (`Hop::Local`), else the best anywhere (`Hop::Global`: global coupling). Fields already on the chain are not re-entered; if such an input also changed nearby the link lists it in `via_feedback` (ice-albedo loop). Near-ties from other input fields are listed in `also`.
+- EVERY LINK is a measured change plus a real module dependency, but the choice among several candidate causes is a RANKING, not a proof; `also` and `via_feedback` say when it is ambiguous. Defaults for a mesh: `local_radius_m = 6 x mean neighbour distance`, `proximity_m = 3 x`, `min_rel = 0.05`, `alt_frac = 0.5`, `max_depth = 12`.
+- Ground-truth tests: toy chain (surface edit -> albedo -> temperature -> humidity, exact field list and patch-edge cell), plume (cause on the same row upwind), pinned albedo "ice patch in a desert" (walk stops at the pin; the unpinned edit changes nothing), real energy stage with a pinned lake (every cell that moved > 0.5 K traces to `pin:lake`; far cells get a Global hop and the temperature feedback loop is named).
+
+### Open (carry forward)
+- Modules do not honour `DirtyRegion` yet (the API is ready); `undo` of an edit does not remove pins (locks are not in the history); the explainer ranks by magnitude and distance only (it does not yet use trace ticks to require cause-before-effect); provenance is not saved with the world file yet (format above is ready); the `earth_like` influence radii are untuned.

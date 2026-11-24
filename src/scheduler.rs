@@ -366,7 +366,8 @@ impl Scheduler {
                     hi = hi.max(v);
                     mx = mx.max(v.abs());
                 }
-                let range = if hi > lo { hi - lo } else { mx };
+                // floor: a nearly constant field (range ~ rounding noise) must not get a tolerance of ~0, or every cell "deviates"
+                let range = (hi - lo).max(1e-2 * mx);
                 t.abs_tol.insert(f.clone(), cfg.front_rel_tol * range.max(1e-300));
                 t.baseline.insert(f.clone(), x.data.clone());
                 t.layers.insert(f.clone(), x.layers);
