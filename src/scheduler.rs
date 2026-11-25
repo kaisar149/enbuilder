@@ -171,6 +171,12 @@ impl Scheduler {
         self.modules[i].params().get(name)
     }
 
+    /// Part 9a (read-only metadata hook for the schema export): every parameter of a module, sorted by name.
+    pub fn module_params(&self, module: &str) -> Option<Vec<(String, f64)>> {
+        let i = self.specs.iter().position(|s| s.name == module)?;
+        Some(self.modules[i].params().iter().map(|(k, v)| (k.clone(), *v)).collect())
+    }
+
     /// Module specs in registration order (Part 6: dirty-region closure and the explainer read the dependency structure from here).
     pub fn specs(&self) -> &[ModuleSpec] { &self.specs }
     pub fn feedback_loops(&self) -> &[FeedbackLoop] { &self.loops }
