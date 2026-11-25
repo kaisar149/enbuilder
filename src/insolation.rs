@@ -226,6 +226,11 @@ impl Module for Insolation {
                 out_year[i] = lit(&year) + pt;
             }
         }
+        // Part 7: anomaly hook `light_intensity` (absent field = untouched, bit-identical baseline).
+        crate::anomaly::apply_modifier(fields, "light_intensity", &mut out_now)?;
+        if self.annual_samples > 0 {
+            crate::anomaly::apply_modifier(fields, "light_intensity", &mut out_year)?;
+        }
         fields.put("insolation", 1, out_now)?;
         if self.annual_samples > 0 {
             fields.put("insolation_annual", 1, out_year)?;

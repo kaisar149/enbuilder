@@ -25,7 +25,7 @@ use crate::module::{DirtyRegion, Module, ModuleSpec, ParamSet};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-const PARAMS: [(&str, f64); 11] = [
+const PARAMS: [(&str, f64); 12] = [
     ("rotation_period_s", 86164.0), // sidereal day; 0 = no rotation (f = 0)
     ("coriolis_scale", 1.0),        // 0 disables Coriolis, 1 = physical
     ("coriolis_const", 0.0),        // nonzero: constant f everywhere (f-plane), overrides spin axis
@@ -37,6 +37,9 @@ const PARAMS: [(&str, f64); 11] = [
     ("contrast_k", 3.36), // dT_eq-pole = contrast_k * std(T_sl), exact for T = T0 - dT sin^2(lat)
     ("upper_ratio", 0.7),
     ("sea_level", 0.0),
+    // Part 7: fixed column mass per area makes sea-level pressure scale with local gravity,
+    // p_sl ~ p0 (|g| / 9.81)^exp. Default 0 = off (keeps the Part 3 tests); the high-gravity example sets 1.
+    ("gravity_pressure_exp", 0.0),
 ];
 
 /// Reference atmosphere density that `sea_level_pressure_pa` corresponds to (Media::earth_like).
@@ -76,7 +79,7 @@ impl Module for PressureModel {
             return Err(Error::InvalidParam(format!("pressure: bad parameter '{name}'")));
         }
         let positive = matches!(name, "sea_level_pressure_pa" | "gas_constant" | "hadley_scale");
-        let nonneg = matches!(name, "rotation_period_s" | "coriolis_scale" | "thermal_coeff" | "band_coeff" | "contrast_k" | "upper_ratio");
+        let nonneg = matches!(name, "rotation_period_s" | "coriolis_scale" | "thermal_coeff" | "band_coeff" | "contrast_k" | "upper_ratio" | "gravity_pressure_exp");
         if (positive && value <= 0.0) || (nonneg && value < 0.0) {
             return Err(Error::InvalidParam(format!("pressure: '{name}' out of range")));
         }
@@ -183,7 +186,18 @@ impl Module for PressureModel {
         for a in anom.iter_mut() {
             *a -= mean;
         }
-        let psl: Vec<f64> = anom.iter().map(|a| p0 + a).collect();
+        let gexp = p("gravity_pressure_exp");
+        let mut psl: Vec<f64> = if gexp != 0.0 {
+            (0..n).map(|i| p0 * (domain.gravity_magnitude(i) / crate::consts::G_EARTH).powf(gexp) + anom[i]).collect()
+        } else {
+            anom.iter().map(|a| p0 + a).collect()
+        };
+        // Part 7: anomaly hook `pressure` (modifier on sea-level pressure, Pa; absent = bit-identical).
+        if crate::anomaly::apply_modifier(fields, "pressure", &mut psl)? {
+            for v in psl.iter_mut() {
+                *v = v.max(1.0);
+            }
+        }
         let sea = p("sea_level");
         let mut ps = vec![0.0; n];
         let mut rho = vec![0.0; n];

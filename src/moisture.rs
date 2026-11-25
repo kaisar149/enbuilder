@@ -94,6 +94,13 @@ impl MoistureSource {
                 es[i] = sub;
             }
         }
+        let mut e = e;
+        // Part 7: anomaly hook `evaporation` (modifier on the final rate; absent = bit-identical).
+        if crate::anomaly::apply_modifier(fields, "evaporation", &mut e)? {
+            for v in e.iter_mut() {
+                *v = v.max(0.0);
+            }
+        }
         fields.put("evaporation", 1, e)?;
         fields.put("evaporation_sublimation", 1, es)?;
         Ok(())
@@ -163,6 +170,12 @@ impl Module for MoistureSource {
                 (k * avail * open * es * (1.0 - rh) * f).clamp(0.0, cap)
             })
             .collect();
+        let mut e = e;
+        if crate::anomaly::apply_modifier(fields, "evaporation", &mut e)? {
+            for v in e.iter_mut() {
+                *v = v.max(0.0);
+            }
+        }
         fields.put("evaporation", 1, e)?;
         Ok(())
     }

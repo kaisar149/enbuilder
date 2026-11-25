@@ -152,7 +152,13 @@ impl Module for DiagnosticWind {
             return Ok(());
         }
 
-        let psl = fields.data("pressure_sl")?.to_vec();
+        let mut psl = fields.data("pressure_sl")?.to_vec();
+        // Part 7: anomaly hook `wind_forcing` (Pa, source): pressure-equivalent forcing that acts on the wind only.
+        if let Some(b) = crate::anomaly::source_of(fields, "wind_forcing")? {
+            for i in 0..n {
+                psl[i] += b[i];
+            }
+        }
         let pup = fields.data("pressure_upper")?.to_vec();
         let rho = fields.data("air_density")?.to_vec();
         let f = fields.data("coriolis_f")?.to_vec();
@@ -163,11 +169,9 @@ impl Module for DiagnosticWind {
         let zc: Vec<f64> = z.iter().map(|&v| v.max(sea)).collect();
 
         let mut r = surface_friction(domain, &z, sea, p("drag_ocean"), p("drag_land"), p("drag_rough_ref_m"));
-        if fields.has("veg_roughness_m") {
-            let c = fields.data("veg_roughness_m")?;
-            if c.len() == r.len() {
-                add_canopy_friction(&mut r, &z, sea, c, p("drag_land"), p("drag_rough_ref_m"));
-            }
+        // Part 5b canopy friction, Part 7: also passes through the anomaly hook `roughness`.
+        if let Some(c) = crate::anomaly::canopy_roughness(fields, n)? {
+            add_canopy_friction(&mut r, &z, sea, &c, p("drag_land"), p("drag_rough_ref_m"));
         }
 
         let mut u = balance(domain, &op.gradient(domain, &psl), &rho, &r, &f);

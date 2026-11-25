@@ -183,7 +183,10 @@ impl Module for SeaLevel {
         Ok(())
     }
     fn run(&mut self, domain: &Domain, fields: &mut FieldStore, _d: &DirtyRegion) -> Result<()> {
-        fields.put("sea_level", 1, vec![self.params.get_or("sea_level", 0.0); domain.n_cells()])
+        let mut sl = vec![self.params.get_or("sea_level", 0.0); domain.n_cells()];
+        // Part 7: anomaly hook `sea_level` (a v + b per cell; absent = bit-identical).
+        crate::anomaly::apply_modifier(fields, "sea_level", &mut sl)?;
+        fields.put("sea_level", 1, sl)
     }
 }
 

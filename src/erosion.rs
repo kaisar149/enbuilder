@@ -199,6 +199,12 @@ impl Module for Erosion {
         let p = |k: &str| self.params.get_or(k, 0.0);
         let (kk, m, ne, years, maxinc, gexp) = (p("K"), p("m_exp"), p("n_exp"), p("years_per_step"), p("max_incision_m_per_step"), p("gravity_exp"));
 
+        // Part 7: anomaly hook `time_flow_rate` (modifier on a base rate of 1): scales the erosion rate cell by cell.
+        let mut tfr = vec![1.0; n];
+        crate::anomaly::apply_modifier(fields, "time_flow_rate", &mut tfr)?;
+        if tfr.iter().any(|v| !v.is_finite() || *v < 0.0) {
+            return Err(Error::InvalidParam("erosion: time_flow_rate must be finite and >= 0".into()));
+        }
         let mut znew = z.clone();
         let (mut vol, mut max_inc, mut n_inc, mut n_cap) = (0.0, 0.0f64, 0.0, 0.0);
         for &c in order.iter().rev() {
@@ -214,7 +220,7 @@ impl Module for Erosion {
             if !(g > 0.0) {
                 return Err(Error::InvalidParam("erosion: gravity must be positive in every cell".into()));
             }
-            let keff = kk * (g / G_EARTH).powf(gexp) / strength[c].max(MIN_STRENGTH);
+            let keff = kk * (g / G_EARTH).powf(gexp) / strength[c].max(MIN_STRENGTH) * tfr[c];
             let coef = keff * area[c].max(0.0).powf(m) * years / dist.powf(ne);
             let base = if dep[r] > 0.0 { filled[r].max(znew[r]) } else { znew[r] };
             let cut = incise(z[c], base, coef, ne);

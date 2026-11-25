@@ -132,6 +132,12 @@ impl Module for AlbedoModel {
             alb[i] = a0 + (1.0 - a0) * p("cloud_albedo");
             ice[i] = f;
         }
+        // Part 7: anomaly hook `albedo` (modifier on the final albedo, clamped to [0,1]; absent = bit-identical).
+        if crate::anomaly::apply_modifier(fields, "albedo", &mut alb)? {
+            for v in alb.iter_mut() {
+                *v = v.clamp(0.0, 1.0);
+            }
+        }
         fields.put("albedo", 1, alb)?;
         fields.put("ice_fraction", 1, ice)?;
         Ok(())
@@ -283,6 +289,13 @@ impl Module for EnergyBalance {
             None
         };
 
+        // Part 7: anomaly hook `temperature_source` (W/m^2 absorbed, source; absent = bit-identical).
+        let q_anom = crate::anomaly::source_of(fields, "temperature_source")?;
+        if let Some(q) = &q_anom {
+            if q.len() != n || q.iter().any(|v| !v.is_finite()) {
+                return Err(Error::InvalidParam("energy_balance: 'anom_temperature_source_b' must be 1 finite layer".into()));
+            }
+        }
         let atm = domain.media.atmosphere.as_ref();
         let eps = if atm.is_some() { 1.0 - p("greenhouse") } else { 1.0 };
         let lapse: Vec<f64> = (0..n)
@@ -314,7 +327,7 @@ impl Module for EnergyBalance {
                     lap += w[q] * (t[mesh.adj[q] as usize] - t[i]);
                 }
                 let t3 = t[i] * t[i] * t[i];
-                let heat = q_ocean.as_ref().map_or(0.0, |q| q[i]);
+                let heat = q_ocean.as_ref().map_or(0.0, |q| q[i]) + q_anom.as_ref().map_or(0.0, |q| q[i]);
                 resid[i] = mesh.area[i] * ((1.0 - alb[i]) * q_in[i] - eps * SIGMA * t3 * t[i] + heat) + kt * lap;
                 diag[i] = mesh.area[i] * 4.0 * eps * SIGMA * t3 + kt * wsum[i];
             }

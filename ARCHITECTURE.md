@@ -1275,3 +1275,45 @@ Compiled and run in the AI sandbox (rustc 1.75 via apt, scratch `Cargo.toml` wit
 
 ### Open (carry forward)
 - Modules do not honour `DirtyRegion` yet (the API is ready); `undo` of an edit does not remove pins (locks are not in the history); the explainer ranks by magnitude and distance only (it does not yet use trace ticks to require cause-before-effect); provenance is not saved with the world file yet (format above is ready); the `earth_like` influence radii are untuned.
+
+## Part 7: anomaly system and storm module (COMPILED; `tests/part7a.rs` 20 tests, `tests/part7b.rs` 8 tests; full `cargo test` green at checkpoint 11, re-run after the `derived.rs` change recorded in the hand-off)
+
+### Anomaly schema (`src/anomaly.rs`)
+- `Anomaly {name, shape, falloff, falloff_m, effects: Vec<Effect>, rules: Vec<Rule>, muted}`; builders `Anomaly::new(name, shape, falloff, falloff_m).with_effect(..).with_rule(..).muted(..)`.
+- `Shape`: `Sphere{center,radius_m}`, `Column{center,axis,radius_m}`, `Line{a,b,half_width_m}`, `Volume{min,max}`, `Region{cells}` (surface distance by Dijkstra), `Global`. A shape returns a distance `d >= 0` from its core (0 inside).
+- `Falloff`: `Hard`, `Linear` (1 - d/L), `Gaussian` (exp(-(d/L)^2), cut at 3 L), `InverseSquare` (1/(1+(d/L)^2), cut at 10 L), `Custom(Vec<(x, w)>)` piecewise linear over x = d/L. All have finite support so dirty regions stay finite.
+- `Effect {hook, op, magnitude, reach}`; `Op::Add` (v += w m), `Op::Multiply` (v *= 1 + w(m-1)), `Op::Override` (v = (1-w)v + w m). `reach` scales the falloff length per effect.
+- `Rule`: `Periodic{period_s,duty,phase,low}`, `When{field,at_least,factor_on,factor_off}`, `Script(ScriptRule)`. A rule factor in [0,1] multiplies the weight; all rules of an anomaly multiply. Rhai is NOT linked (std-only crate): `Script` is the seam.
+- Compilation: every op is affine, so each hook compiles to per-cell `a`, `b` with `v' = a v + b` (identity a=1, b=0). Written by module `anomalies` as fields `anom_<hook>_a` and `anom_<hook>_b` (`:` becomes `_`); Source hooks keep only `_b`. Consumers read them OPTIONALLY (`apply_modifier`, `source_of`, `canopy_roughness`), so with no stage or all anomalies muted the pipeline is bit-identical to the baseline.
+- Handle: `Anomalies` (Arc<Mutex<AnomalySet>>) with `add/remove/set_muted/set_time/snapshot/hooks/effective_domain`; `add_anomaly_stage(&mut scheduler, &handle)` (register BEFORE the climate stages; hooks declared via `AnomalyStage::with_hooks` when needed).
+- Gravity is special only in WHERE it is applied: `Anomalies::effective_domain(&base)` returns a domain copy with per-cell `|g|` modified (direction kept). Nothing else is special-cased.
+
+### Hook list (`HOOKS`, 15 + `custom:<name>`)
+Modifier: `gravity`, `albedo`, `pressure`, `roughness`, `evaporation`, `elevation`, `rock_strength`, `sea_level`, `life_growth`, `time_flow_rate`, `light_intensity`. Source (base 0): `temperature_source`, `wind_forcing`, `charge_potential`, `magnetic_field`, and every `custom:<name>`.
+Declared consumers (module `anomaly_hooks`): gravity -> pressure, wind, wind_stepped, hydraulics, terrain, erosion, sediment; pressure -> pressure; temperature_source -> energy_balance, pressure, moisture; albedo -> albedo; wind_forcing / roughness -> wind, wind_stepped (wind_forcing also ocean stress); evaporation -> moisture; elevation, rock_strength -> tectonics, terrain (rock_strength also erosion, sediment); sea_level -> sea_level; life_growth -> biomes (canopy), derived_maps (soil_fertility), nutrients; time_flow_rate -> erosion, sediment; light_intensity -> insolation; charge_potential, magnetic_field -> storm.
+
+### Inspector data
+- `inspect(domain, &set) -> Vec<AnomalyInfo {name, muted, shape, falloff, falloff_m, hooks, rules, cells_influenced, area_influenced_m2, reach_m}>` (list plus mute state).
+- `impact_map(domain, &anomaly) -> BTreeMap<hook, Vec<f64>>`: direct impact per hook (Add: w m; Multiply: w (m-1); Override: w), ignoring mute and rules.
+- `field_impact(&handle, name, field, solve) -> Vec<f64>`: impact on ANY downstream field by re-solving with and without the anomaly (`with - without`, layer 0); restores the mute state. Works unchanged for storm outputs (tested on charge, lightning_rate, convective_activity, precip_seeding; temperature impact is exactly 0).
+
+### Biome canopy and gravity (biomes.rs)
+`biome_roughness_m = canopy x life_growth x gravity_cap`, cap = (g/9.81)^-canopy_gravity_exp applied only when g > 9.81 (1 + 1e-9), so baseline is bit-exact. New biomes param `canopy_gravity_exp` (default 1). (Corrects an earlier note: this hook was missing from the zip until checkpoint 8.)
+
+### High-gravity example (tests/part7a.rs, level 4, no special-case code)
+At g x2.5: sea-level pressure +2..8%, ring wind x1.3+, outflow divergence rises (recorded deviation), relief max and std lower, river speed ratio = sqrt(2.5), 30 m canopy becomes about 12 m.
+
+### Storm module (`src/storm.rs`, module `storm`, `add_storm_stage`)
+- Inputs: `precip_conv`, `precipitation`, `vapor`, `temperature` (first layer), `elevation`. Hooks: `charge_potential`, `magnetic_field`.
+- Outputs: `charge`, `convective_activity`, `lightning_rate` (flashes/km^2/yr), `fire_frequency`, `fire_adapted` (0/1, usable as a biome `Condition`), `soil_nitrogen_flux` (kg N/ha/yr), `soil_nitrogen` (0..1), `precip_seeding`, `precip_seeded`, `fulgurite_density`, `compass_disturbance`. Formulas are in the file header. 16 parameters plus `sea_level` (see `STORM_PARAMS`: background_charge, conv_ref, vapor_ref, warm_ramp_k, updraft_gain, flash_max, q_cap, ocean_ratio, ignition_prob, wet_ref, fuel_ref, fire_adapted_threshold, n_per_flash, n_ref, seed_gain, seed_tau_s). Ocean cells: no fire, lightning scaled by `ocean_ratio`.
+- DEVIATION (recorded): rain seeding is a diagnostic overlay. `precip_seeded = precipitation + precip_seeding`; the transport run and the water budget still use `precipitation`, so `precipitation` and `temperature` are bit-identical with and without a charge anomaly.
+- `derived_maps` new parameter `nitrogen_gain` (default 0 = baseline bit-exact). When > 0, `soil_nitrogen` becomes a declared input (scheduler orders storm first) and `soil_fertility *= 1 + gain x soil_nitrogen`, clamped to 1, before the `life_growth` hook.
+
+### Acceptance (PART_07)
+Muting restores baseline bit-for-bit (storm and climate fields); high-charge region gives lightning x5+ (x21 in the plane test), fire-adapted biomes, nitrogen, seeding, compass disturbance; falloff matches the chosen curve exactly (checked for each falloff kind).
+
+### Open (carry forward)
+- Modules declare hooks that are NOT in `HOOKS`, so no anomaly can target them yet: `greenhouse` (energy_balance), `sea_temperature_source` (ocean_heat), `salinity_source` (ocean_secondary). Add them to `HOOKS` or remove the declarations.
+- `magnetic_field` is carried as a field and read only by `storm` (compass disturbance).
+- Rhai scripting not linked; `Rule::Script` is the seam. Anomalies do not yet participate in `DirtyRegion` propagation or provenance (`Provenance::mark_anomaly` and `anomaly:<name>` origins exist; the plan in provenance.rs is for Part 8 to call it, nothing in Part 7 does).
+- High-gravity outflow divergence rises (recorded deviation from the expected sink).

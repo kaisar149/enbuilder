@@ -579,7 +579,7 @@ impl Module for Koppen {
 // ---------------------------------------------------------------------------------------------
 
 const BIOME_OUTPUT_ONLY: [&str; 2] = ["n_unclassified", "n_biomes_present"];
-const BIOME_SETTABLE: [&str; 3] = ["fallback_albedo", "fallback_evap_factor", "fallback_roughness_m"];
+const BIOME_SETTABLE: [&str; 4] = ["fallback_albedo", "fallback_evap_factor", "fallback_roughness_m", "canopy_gravity_exp"];
 
 /// The biome map. Inputs: exactly the fields the table's conditions read (so the scheduler orders it after whatever produces them).
 /// Outputs `biome` (id as f64, `table.len()` = unclassified), `biome_albedo`, `biome_evap_factor`, `biome_roughness_m`, and
@@ -597,6 +597,7 @@ impl Biomes {
             .with("fallback_albedo", 0.22)
             .with("fallback_evap_factor", 1.0)
             .with("fallback_roughness_m", 0.0)
+            .with("canopy_gravity_exp", 1.0)
             .with("n_unclassified", 0.0)
             .with("n_biomes_present", 0.0);
         Biomes { table, params }
@@ -611,7 +612,7 @@ impl Module for Biomes {
             name: "biomes".into(),
             inputs: self.table.fields().into_iter().collect(),
             outputs: names(&["biome", "biome_albedo", "biome_evap_factor", "biome_roughness_m", "biome_color"]),
-            anomaly_hooks: vec![],
+            anomaly_hooks: vec!["life_growth".into()],
         }
     }
     fn params(&self) -> &ParamSet { &self.params }
@@ -652,6 +653,11 @@ impl Module for Biomes {
         let fb_evap = self.params.get_or("fallback_evap_factor", 1.0);
         let fb_rough = self.params.get_or("fallback_roughness_m", 0.0);
         let nb = self.table.len();
+        // Part 7: canopy (biome_roughness_m) x `life_growth` hook x gravity cap min(1, (g_earth/g)^canopy_gravity_exp).
+        // Both factors are exactly 1.0 with no anomaly and g <= g_earth, so the baseline is bit-identical.
+        let gexp = self.params.get_or("canopy_gravity_exp", 1.0);
+        let mut growth = vec![1.0; n];
+        crate::anomaly::apply_modifier(fields, "life_growth", &mut growth)?;
         let mut id = vec![nb as f64; n];
         let mut albedo = vec![fb_albedo; n];
         let mut evap = vec![fb_evap; n];
@@ -677,7 +683,9 @@ impl Module for Biomes {
                 let b = &self.table.biomes[hit];
                 albedo[i] = b.albedo;
                 evap[i] = b.evap_factor;
-                rough[i] = b.roughness_m;
+                let gr = domain.gravity_magnitude(i) / crate::consts::G_EARTH;
+                let gcap = if gr <= 1.0 + 1e-9 { 1.0 } else { gr.powf(-gexp) };
+                rough[i] = b.roughness_m * gcap * growth[i].max(0.0);
                 for k in 0..3 {
                     color[i * 3 + k] = b.color[k] as f64 / 255.0;
                 }

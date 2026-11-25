@@ -307,6 +307,12 @@ impl Module for Tectonics {
             pid[i] = plate[i] as f64;
             cc[i] = if is_cont { 1.0 } else { 0.0 };
         }
+        // Part 7: anomaly hook `rock_strength` (after the physical clamp; floored so divisions stay finite).
+        if crate::anomaly::apply_modifier(fields, "rock_strength", &mut strength)? {
+            for v in strength.iter_mut() {
+                *v = v.max(0.05);
+            }
+        }
         fields.put("plate_id", 1, pid)?;
         fields.put("crust_continental", 1, cc)?;
         fields.put("boundary_type", 1, btype)?;

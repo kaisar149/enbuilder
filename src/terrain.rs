@@ -180,6 +180,9 @@ impl Module for TerrainShaping {
             e[i] = if e[i] >= 0.0 { soft_cap(e[i], h_up, knee) } else { -soft_cap(-e[i], h_dn, knee) };
         }
 
+        // ---- Part 7: anomaly hook `elevation` (a v + b on the final surface; absent = bit-identical) ----
+        crate::anomaly::apply_modifier(fields, "elevation", &mut e)?;
+
         // ---- slope diagnostic: steepest neighbour gradient ----
         let mut slope = vec![0.0; n];
         for i in 0..n {

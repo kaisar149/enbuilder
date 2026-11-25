@@ -30,20 +30,22 @@ pub struct DerivedParams {
     pub slope_gain: f64,
     pub canopy_ref_m: f64,
     pub sea_level: f64,
+    /// Part 7: soil fertility boost from lightning-fixed nitrogen, `fert * (1 + nitrogen_gain * soil_nitrogen)`. 0 = off (default, bit-exact baseline).
+    pub nitrogen_gain: f64,
 }
 
 impl Default for DerivedParams {
     fn default() -> Self {
-        DerivedParams { aridity_lo: 0.1, aridity_hi: 1.0, gdd_lo: 300.0, gdd_hi: 2500.0, soil_ref_m: 0.1, fresh_lo: 0.05, fresh_hi: 0.4, slope_gain: 4.0, canopy_ref_m: 30.0, sea_level: 0.0 }
+        DerivedParams { aridity_lo: 0.1, aridity_hi: 1.0, gdd_lo: 300.0, gdd_hi: 2500.0, soil_ref_m: 0.1, fresh_lo: 0.05, fresh_hi: 0.4, slope_gain: 4.0, canopy_ref_m: 30.0, sea_level: 0.0, nitrogen_gain: 0.0 }
     }
 }
 
-const PARAM_NAMES: [&str; 10] =
-    ["aridity_lo", "aridity_hi", "gdd_lo", "gdd_hi", "soil_ref_m", "fresh_lo", "fresh_hi", "slope_gain", "canopy_ref_m", "sea_level"];
+const PARAM_NAMES: [&str; 11] =
+    ["aridity_lo", "aridity_hi", "gdd_lo", "gdd_hi", "soil_ref_m", "fresh_lo", "fresh_hi", "slope_gain", "canopy_ref_m", "sea_level", "nitrogen_gain"];
 
 impl DerivedParams {
     fn to_set(self) -> ParamSet {
-        let v = [self.aridity_lo, self.aridity_hi, self.gdd_lo, self.gdd_hi, self.soil_ref_m, self.fresh_lo, self.fresh_hi, self.slope_gain, self.canopy_ref_m, self.sea_level];
+        let v = [self.aridity_lo, self.aridity_hi, self.gdd_lo, self.gdd_hi, self.soil_ref_m, self.fresh_lo, self.fresh_hi, self.slope_gain, self.canopy_ref_m, self.sea_level, self.nitrogen_gain];
         let mut s = ParamSet::new();
         for (k, x) in PARAM_NAMES.iter().zip(v) {
             s.set(k, x);
@@ -63,6 +65,7 @@ impl DerivedParams {
             slope_gain: s.get_or("slope_gain", d.slope_gain),
             canopy_ref_m: s.get_or("canopy_ref_m", d.canopy_ref_m),
             sea_level: s.get_or("sea_level", d.sea_level),
+            nitrogen_gain: s.get_or("nitrogen_gain", d.nitrogen_gain),
         }
     }
 }
@@ -127,9 +130,16 @@ impl Module for DerivedMaps {
     fn spec(&self) -> ModuleSpec {
         ModuleSpec {
             name: "derived_maps".into(),
-            inputs: names(&DERIVED_INPUTS),
+            inputs: {
+                // Part 7: with `nitrogen_gain` > 0 the storm module's `soil_nitrogen` becomes a real input (so the scheduler orders storm first)
+                let mut v = names(&DERIVED_INPUTS);
+                if DerivedParams::from_set(&self.params).nitrogen_gain > 0.0 {
+                    v.push("soil_nitrogen".into());
+                }
+                v
+            },
             outputs: names(&["soil_fertility", "habitability", "travel_difficulty"]),
-            anomaly_hooks: vec![],
+            anomaly_hooks: vec!["life_growth".into()],
         }
     }
     fn params(&self) -> &ParamSet { &self.params }
@@ -140,7 +150,7 @@ impl Module for DerivedMaps {
         let mut next = self.params.clone();
         next.set(name, value);
         let p = DerivedParams::from_set(&next);
-        let ok = p.aridity_lo < p.aridity_hi && p.gdd_lo < p.gdd_hi && p.fresh_lo < p.fresh_hi && p.soil_ref_m > 0.0 && p.canopy_ref_m > 0.0 && p.slope_gain >= 0.0;
+        let ok = p.aridity_lo < p.aridity_hi && p.gdd_lo < p.gdd_hi && p.fresh_lo < p.fresh_hi && p.soil_ref_m > 0.0 && p.canopy_ref_m > 0.0 && p.slope_gain >= 0.0 && p.nitrogen_gain >= 0.0;
         if !ok {
             return Err(Error::InvalidParam(format!("derived_maps.{name}: value breaks lo < hi, a positive reference or a non-negative gain")));
         }
@@ -160,6 +170,9 @@ impl Module for DerivedMaps {
         };
         let (tc, tw, gdd, ar, soil) = (get("clim_t_cold_c")?, get("clim_t_warm_c")?, get("clim_gdd")?, get("clim_aridity")?, get("clim_soil_m")?);
         let (ocean, glacier, canopy, z) = (get("ocean_mask")?, get("glacier_mask")?, get("biome_roughness_m")?, get("elevation")?);
+        let mut growth = vec![1.0; n];
+        let grow = crate::anomaly::apply_modifier(fields, "life_growth", &mut growth)?;
+        let nitrogen = if p.nitrogen_gain > 0.0 { Some(get("soil_nitrogen")?) } else { None };
         let slope = mean_slope(domain, &z, p.sea_level);
         let (mut fert, mut hab, mut trav) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
         for i in 0..n {
@@ -168,6 +181,12 @@ impl Module for DerivedMaps {
             }
             let ice = glacier[i] > 0.5;
             fert[i] = if ice { 0.0 } else { soil_fertility(&p, ar[i], gdd[i], soil[i]) };
+            if let Some(nf) = &nitrogen {
+                fert[i] = (fert[i] * (1.0 + p.nitrogen_gain * nf[i].clamp(0.0, 1.0))).clamp(0.0, 1.0); // Part 7: lightning-fixed nitrogen
+            }
+            if grow {
+                fert[i] = (fert[i] * growth[i].max(0.0)).clamp(0.0, 1.0); // Part 7: hook `life_growth`
+            }
             hab[i] = if ice { 0.0 } else { habitability(&p, fert[i], tc[i], tw[i], ar[i]) };
             trav[i] = travel_difficulty(&p, slope[i], canopy[i], tc[i], tw[i], ice);
         }
