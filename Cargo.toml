@@ -16,3 +16,6 @@ pollster = { version = "0.4", optional = true }
 
 [profile.test]
 opt-level = 2
+
+[workspace]
+members = [".", "wb-app"]

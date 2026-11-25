@@ -1,0 +1,2782 @@
+{
+  "api_version": 1,
+  "biomes": [
+    {
+      "color": [
+        31,
+        78,
+        140
+      ],
+      "id": 0,
+      "name": "ocean"
+    },
+    {
+      "color": [
+        244,
+        248,
+        255
+      ],
+      "id": 1,
+      "name": "glacier"
+    },
+    {
+      "color": [
+        223,
+        234,
+        242
+      ],
+      "id": 2,
+      "name": "polar_ice"
+    },
+    {
+      "color": [
+        183,
+        196,
+        160
+      ],
+      "id": 3,
+      "name": "tundra"
+    },
+    {
+      "color": [
+        230,
+        195,
+        106
+      ],
+      "id": 4,
+      "name": "hot_desert"
+    },
+    {
+      "color": [
+        201,
+        185,
+        143
+      ],
+      "id": 5,
+      "name": "cold_desert"
+    },
+    {
+      "color": [
+        196,
+        164,
+        90
+      ],
+      "id": 6,
+      "name": "thorn_scrub"
+    },
+    {
+      "color": [
+        201,
+        199,
+        122
+      ],
+      "id": 7,
+      "name": "steppe"
+    },
+    {
+      "color": [
+        11,
+        107,
+        46
+      ],
+      "id": 8,
+      "name": "tropical_rainforest"
+    },
+    {
+      "color": [
+        47,
+        143,
+        58
+      ],
+      "id": 9,
+      "name": "tropical_seasonal_forest"
+    },
+    {
+      "color": [
+        181,
+        184,
+        72
+      ],
+      "id": 10,
+      "name": "savanna"
+    },
+    {
+      "color": [
+        138,
+        154,
+        60
+      ],
+      "id": 11,
+      "name": "mediterranean"
+    },
+    {
+      "color": [
+        46,
+        93,
+        75
+      ],
+      "id": 12,
+      "name": "taiga"
+    },
+    {
+      "color": [
+        167,
+        201,
+        87
+      ],
+      "id": 13,
+      "name": "temperate_grassland"
+    },
+    {
+      "color": [
+        79,
+        143,
+        74
+      ],
+      "id": 14,
+      "name": "temperate_forest"
+    },
+    {
+      "color": [
+        106,
+        153,
+        78
+      ],
+      "id": 15,
+      "name": "mixed_woodland"
+    }
+  ],
+  "colormaps": [
+    "terrain",
+    "temperature",
+    "rain",
+    "speed",
+    "viridis",
+    "mask",
+    "category"
+  ],
+  "fields": [
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "air_density",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "albedo",
+      "produced_by": [
+        "albedo"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "band_coord",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "category",
+      "description": "Biome id (palette in the schema `biomes`)",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "category",
+      "name": "biome",
+      "produced_by": [
+        "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "biome_albedo",
+      "produced_by": [
+        "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "biome_color",
+      "produced_by": [
+        "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "biome_evap_factor",
+      "produced_by": [
+        "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "biome_roughness_m",
+      "produced_by": [
+        "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_aridity",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_gdd",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_months_warm",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_p_annual",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_p_dry",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_p_summer_frac",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_p_wet",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_pet",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_soil_m",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_t_cold_c",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_t_mean_c",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_t_range_k",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "clim_t_warm_c",
+      "produced_by": [
+        "climate_normals"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Distance to the coast",
+      "display": {
+        "offset": 0.0,
+        "scale": 0.001,
+        "unit": "km"
+      },
+      "kind": "scalar",
+      "name": "coast_distance",
+      "produced_by": [
+        "ocean_mask"
+      ],
+      "range": null,
+      "unit": "m"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "coriolis_f",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "depression_depth",
+      "produced_by": [
+        "flow_routing"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "depth",
+      "produced_by": [
+        "ocean_mask"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "River discharge",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m3/s"
+      },
+      "kind": "scalar",
+      "name": "discharge",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": "m3 s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "divergence_residual",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Upstream drainage area",
+      "display": {
+        "offset": 0.0,
+        "scale": 1e-6,
+        "unit": "km2"
+      },
+      "kind": "scalar",
+      "name": "drainage_area",
+      "produced_by": [
+        "flow_routing"
+      ],
+      "range": null,
+      "unit": "m2"
+    },
+    {
+      "colormap": "terrain",
+      "description": "Surface elevation relative to sea level",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m"
+      },
+      "kind": "scalar",
+      "name": "elevation",
+      "produced_by": [
+        "world"
+      ],
+      "range": [
+        -5000.0,
+        5000.0
+      ],
+      "unit": "m"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "elevation_filled",
+      "produced_by": [
+        "flow_routing"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Evaporation",
+      "display": {
+        "offset": 0.0,
+        "scale": 86400.0,
+        "unit": "mm/day"
+      },
+      "kind": "scalar",
+      "name": "evaporation",
+      "produced_by": [
+        "moisture_source"
+      ],
+      "range": null,
+      "unit": "kg m-2 s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "evaporation_sublimation",
+      "produced_by": [
+        "moisture_source"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "flow_dir",
+      "produced_by": [
+        "flow_routing"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "flow_order",
+      "produced_by": [
+        "flow_routing"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "glacier_ice",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "mask",
+      "description": "Glacier ice present",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "mask",
+      "name": "glacier_mask",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Habitability",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "habitability",
+      "produced_by": [
+        "derived_maps"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "ice_fraction",
+      "produced_by": [
+        "albedo"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "ice_melt",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Absorbed solar input",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "W/m2"
+      },
+      "kind": "scalar",
+      "name": "insolation",
+      "produced_by": [
+        "insolation"
+      ],
+      "range": null,
+      "unit": "W m-2"
+    },
+    {
+      "colormap": "category",
+      "description": "Koppen class id",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "category",
+      "name": "koppen",
+      "produced_by": [
+        "koppen"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "koppen_group",
+      "produced_by": [
+        "koppen"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Lake depth",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m"
+      },
+      "kind": "scalar",
+      "name": "lake_depth",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": "m"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "lake_id",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "lake_outflow",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "lake_volume",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "land_availability",
+      "produced_by": [
+        "land_supply"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "land_storage_m",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "lift",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "ocean_component",
+      "produced_by": [
+        "ocean_mask"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "mask",
+      "description": "Ocean cells",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "mask",
+      "name": "ocean_mask",
+      "produced_by": [
+        "ocean_mask"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "precip_conv",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "precip_front",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "precip_oro",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "precip_sat",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Annual mean precipitation (after a solve)",
+      "display": {
+        "offset": 0.0,
+        "scale": 86400.0,
+        "unit": "mm/day"
+      },
+      "kind": "scalar",
+      "name": "precipitation",
+      "produced_by": [
+        "moisture_transport",
+        "solve"
+      ],
+      "range": [
+        0.0,
+        0.0001
+      ],
+      "unit": "kg m-2 s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "pressure",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Sea-level pressure",
+      "display": {
+        "offset": 0.0,
+        "scale": 0.01,
+        "unit": "hPa"
+      },
+      "kind": "scalar",
+      "name": "pressure_sl",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": "Pa"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "pressure_upper",
+      "produced_by": [
+        "pressure"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "mask",
+      "description": "River cells",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "mask",
+      "name": "river_mask",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Runoff",
+      "display": {
+        "offset": 0.0,
+        "scale": 86400.0,
+        "unit": "mm/day"
+      },
+      "kind": "scalar",
+      "name": "runoff",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": "kg m-2 s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "salt_flat",
+      "produced_by": [
+        "rivers_lakes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "sea_level",
+      "produced_by": [
+        "sea_level"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "snow_age_s",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Snow cover fraction",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "snow_cover",
+      "produced_by": [
+        "land_supply"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "snow_water_equivalent",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "snowfall",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "snowmelt",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "soil_evap_cap",
+      "produced_by": [
+        "land_supply"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Soil fertility",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "soil_fertility",
+      "produced_by": [
+        "derived_maps"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Soil moisture",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "soil_moisture",
+      "produced_by": [
+        "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "sublimation_cap",
+      "produced_by": [
+        "land_supply"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "temperature",
+      "description": "Annual mean surface temperature (after a solve)",
+      "display": {
+        "offset": -273.15,
+        "scale": 1.0,
+        "unit": "degC"
+      },
+      "kind": "scalar",
+      "name": "temperature",
+      "produced_by": [
+        "energy_balance",
+        "solve"
+      ],
+      "range": [
+        220.0,
+        320.0
+      ],
+      "unit": "K"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "temperature_sl",
+      "produced_by": [
+        "energy_balance"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "Travel difficulty",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "travel_difficulty",
+      "produced_by": [
+        "derived_maps"
+      ],
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": ""
+    },
+    {
+      "colormap": "rain",
+      "description": "Column water vapour",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "kg/m2"
+      },
+      "kind": "scalar",
+      "name": "vapor",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": "kg m-2"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "vapor_start",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "speed",
+      "description": "Surface wind vector (3 layers)",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m/s"
+      },
+      "kind": "vector",
+      "name": "wind",
+      "produced_by": [
+        "wind"
+      ],
+      "range": null,
+      "unit": "m s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_corrected",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_divergence",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_east",
+      "produced_by": [
+        "wind"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_flux",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_flux_corrected",
+      "produced_by": [
+        "moisture_transport"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_north",
+      "produced_by": [
+        "wind"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "speed",
+      "description": "Surface wind speed",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m/s"
+      },
+      "kind": "scalar",
+      "name": "wind_speed",
+      "produced_by": [
+        "wind"
+      ],
+      "range": null,
+      "unit": "m s-1"
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "kind": "scalar",
+      "name": "wind_upper",
+      "produced_by": [
+        "wind"
+      ],
+      "range": null,
+      "unit": ""
+    }
+  ],
+  "loops": [
+    {
+      "members": [
+        "albedo",
+        "energy_balance"
+      ],
+      "name": "ice_albedo"
+    },
+    {
+      "members": [
+        "moisture_source",
+        "moisture_transport"
+      ],
+      "name": "water_cycle"
+    }
+  ],
+  "modules": [
+    {
+      "anomaly_hooks": [
+        "light_intensity"
+      ],
+      "inputs": [],
+      "name": "insolation",
+      "outputs": [
+        "insolation"
+      ],
+      "params": [
+        {
+          "default": 24.0,
+          "name": "diurnal_samples"
+        },
+        {
+          "default": 0.0,
+          "name": "season"
+        },
+        {
+          "default": 30.0,
+          "name": "shadow_azimuth_deg"
+        },
+        {
+          "default": 3.0,
+          "name": "shadow_hops"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "albedo"
+      ],
+      "inputs": [
+        "temperature",
+        "elevation"
+      ],
+      "name": "albedo",
+      "outputs": [
+        "albedo",
+        "ice_fraction"
+      ],
+      "params": [
+        {
+          "default": 0.6,
+          "name": "albedo_ice"
+        },
+        {
+          "default": 0.22,
+          "name": "albedo_land"
+        },
+        {
+          "default": 0.06,
+          "name": "albedo_water"
+        },
+        {
+          "default": 0.2,
+          "name": "cloud_albedo"
+        },
+        {
+          "default": 273.15,
+          "name": "ice_t_hi"
+        },
+        {
+          "default": 263.15,
+          "name": "ice_t_lo"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "temperature_source",
+        "greenhouse"
+      ],
+      "inputs": [
+        "insolation",
+        "albedo",
+        "elevation"
+      ],
+      "name": "energy_balance",
+      "outputs": [
+        "temperature_sl",
+        "temperature"
+      ],
+      "params": [
+        {
+          "default": 3000.0,
+          "name": "cg_max_iters"
+        },
+        {
+          "default": 1e-8,
+          "name": "cg_tol"
+        },
+        {
+          "default": 0.39,
+          "name": "greenhouse"
+        },
+        {
+          "default": 0.65,
+          "name": "lapse_fraction"
+        },
+        {
+          "default": 40.0,
+          "name": "max_step_k"
+        },
+        {
+          "default": 8.0,
+          "name": "newton_iters"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 288.0,
+          "name": "t_init"
+        },
+        {
+          "default": 0.55,
+          "name": "transport_coeff"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "gravity",
+        "pressure",
+        "temperature_source"
+      ],
+      "inputs": [
+        "temperature_sl",
+        "temperature",
+        "elevation"
+      ],
+      "name": "pressure",
+      "outputs": [
+        "pressure_sl",
+        "pressure",
+        "pressure_upper",
+        "air_density",
+        "coriolis_f",
+        "band_coord"
+      ],
+      "params": [
+        {
+          "default": 0.05,
+          "name": "band_coeff"
+        },
+        {
+          "default": 3.36,
+          "name": "contrast_k"
+        },
+        {
+          "default": 0.0,
+          "name": "coriolis_const"
+        },
+        {
+          "default": 1.0,
+          "name": "coriolis_scale"
+        },
+        {
+          "default": 287.05,
+          "name": "gas_constant"
+        },
+        {
+          "default": 0.0,
+          "name": "gravity_pressure_exp"
+        },
+        {
+          "default": 2.5,
+          "name": "hadley_scale"
+        },
+        {
+          "default": 86164.0,
+          "name": "rotation_period_s"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 101325.0,
+          "name": "sea_level_pressure_pa"
+        },
+        {
+          "default": 0.04,
+          "name": "thermal_coeff"
+        },
+        {
+          "default": 0.7,
+          "name": "upper_ratio"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "wind_forcing",
+        "roughness",
+        "gravity"
+      ],
+      "inputs": [
+        "pressure_sl",
+        "pressure_upper",
+        "air_density",
+        "coriolis_f",
+        "elevation"
+      ],
+      "name": "wind",
+      "outputs": [
+        "wind",
+        "wind_upper",
+        "wind_speed",
+        "wind_east",
+        "wind_north"
+      ],
+      "params": [
+        {
+          "default": 1.0,
+          "name": "blocking_gain"
+        },
+        {
+          "default": 0.00003,
+          "name": "drag_land"
+        },
+        {
+          "default": 0.000015,
+          "name": "drag_ocean"
+        },
+        {
+          "default": 500.0,
+          "name": "drag_rough_ref_m"
+        },
+        {
+          "default": 8e-6,
+          "name": "drag_upper"
+        },
+        {
+          "default": 80.0,
+          "name": "max_wind"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 0.01,
+          "name": "stability_n"
+        },
+        {
+          "default": 0.5,
+          "name": "upper_density_ratio"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "sea_level"
+      ],
+      "inputs": [],
+      "name": "sea_level",
+      "outputs": [
+        "sea_level"
+      ],
+      "params": [
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "elevation",
+        "sea_level"
+      ],
+      "name": "ocean_mask",
+      "outputs": [
+        "ocean_mask",
+        "ocean_component",
+        "coast_distance",
+        "depth"
+      ],
+      "params": [
+        {
+          "default": 0.0,
+          "name": "min_ocean_area_m2"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "elevation",
+        "ocean_mask"
+      ],
+      "name": "flow_routing",
+      "outputs": [
+        "elevation_filled",
+        "depression_depth",
+        "flow_dir",
+        "flow_order",
+        "drainage_area"
+      ],
+      "params": [
+        {
+          "default": 0.0,
+          "name": "max_depression_depth_m"
+        },
+        {
+          "default": 0.0,
+          "name": "n_depression_cells"
+        },
+        {
+          "default": 0.0,
+          "name": "n_outlets"
+        },
+        {
+          "default": 0.0,
+          "name": "n_sinks"
+        },
+        {
+          "default": 0.0,
+          "name": "n_void_outlets"
+        },
+        {
+          "default": 0.0,
+          "name": "require_outlet"
+        },
+        {
+          "default": 1.0,
+          "name": "void_outflow"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "ocean_mask",
+        "soil_moisture_prev",
+        "snow_water_equivalent_prev",
+        "glacier_ice_prev"
+      ],
+      "name": "land_supply",
+      "outputs": [
+        "land_availability",
+        "soil_evap_cap",
+        "sublimation_cap",
+        "snow_cover"
+      ],
+      "params": [
+        {
+          "default": 0.00001,
+          "name": "glacier_flow_coeff"
+        },
+        {
+          "default": 0.5,
+          "name": "glacier_flow_max_frac"
+        },
+        {
+          "default": 0.1,
+          "name": "glacier_mask_min_m"
+        },
+        {
+          "default": 31557600.0,
+          "name": "glacier_persist_s"
+        },
+        {
+          "default": 0.5,
+          "name": "glacier_threshold_m"
+        },
+        {
+          "default": 0.917,
+          "name": "ice_density_ratio"
+        },
+        {
+          "default": 273.15,
+          "name": "melt_T"
+        },
+        {
+          "default": 4.6e-8,
+          "name": "melt_rate_m_per_K_s"
+        },
+        {
+          "default": 1000.0,
+          "name": "rho_water"
+        },
+        {
+          "default": 273.15,
+          "name": "snow_T"
+        },
+        {
+          "default": 0.01,
+          "name": "snow_cover_ref_m"
+        },
+        {
+          "default": 0.001,
+          "name": "snow_min_m"
+        },
+        {
+          "default": 3.0,
+          "name": "snow_ramp_K"
+        },
+        {
+          "default": 0.15,
+          "name": "soil_capacity_m"
+        },
+        {
+          "default": 2592000.0,
+          "name": "step_s"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "evaporation",
+        "temperature_source"
+      ],
+      "inputs": [
+        "temperature",
+        "ice_fraction",
+        "wind_speed",
+        "ocean_mask",
+        "land_availability",
+        "soil_evap_cap",
+        "sublimation_cap",
+        "snow_cover"
+      ],
+      "name": "moisture_source",
+      "outputs": [
+        "evaporation",
+        "evaporation_sublimation"
+      ],
+      "params": [
+        {
+          "default": 1.8e-8,
+          "name": "k_ocean"
+        },
+        {
+          "default": 0.3,
+          "name": "land_availability"
+        },
+        {
+          "default": 0.0001,
+          "name": "max_evap"
+        },
+        {
+          "default": 0.5,
+          "name": "relative_humidity_ref"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 0.1,
+          "name": "sublimation_coeff"
+        },
+        {
+          "default": 0.5,
+          "name": "wind_base"
+        },
+        {
+          "default": 0.1,
+          "name": "wind_coeff"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "wind_forcing",
+        "humidity",
+        "precipitation",
+        "gravity"
+      ],
+      "inputs": [
+        "wind",
+        "evaporation",
+        "temperature",
+        "elevation"
+      ],
+      "name": "moisture_transport",
+      "outputs": [
+        "vapor",
+        "vapor_start",
+        "wind_flux",
+        "wind_flux_corrected",
+        "wind_corrected",
+        "wind_divergence",
+        "divergence_residual",
+        "precipitation",
+        "precip_oro",
+        "precip_conv",
+        "precip_front",
+        "precip_sat",
+        "lift"
+      ],
+      "params": [
+        {
+          "default": 0.5,
+          "name": "cfl"
+        },
+        {
+          "default": 5e-6,
+          "name": "conv_div_ref"
+        },
+        {
+          "default": 3.0,
+          "name": "conv_dyn_max"
+        },
+        {
+          "default": 0.1,
+          "name": "conv_dyn_min"
+        },
+        {
+          "default": 1.0,
+          "name": "conv_on"
+        },
+        {
+          "default": 5.0,
+          "name": "conv_ramp_k"
+        },
+        {
+          "default": 0.000046,
+          "name": "conv_rate"
+        },
+        {
+          "default": 298.0,
+          "name": "conv_threshold_T"
+        },
+        {
+          "default": 1.0,
+          "name": "dry_adiabatic_scale"
+        },
+        {
+          "default": 0.3,
+          "name": "front_gain"
+        },
+        {
+          "default": 1.0,
+          "name": "front_on"
+        },
+        {
+          "default": 864000.0,
+          "name": "init_residence_s"
+        },
+        {
+          "default": 3.0,
+          "name": "lift_gain"
+        },
+        {
+          "default": 100000.0,
+          "name": "max_substeps"
+        },
+        {
+          "default": 1.0,
+          "name": "oro_on"
+        },
+        {
+          "default": 20000.0,
+          "name": "projection_max_iters"
+        },
+        {
+          "default": 1e-12,
+          "name": "projection_tol"
+        },
+        {
+          "default": 1.0,
+          "name": "removal_fraction"
+        },
+        {
+          "default": 0.5,
+          "name": "rh_trigger"
+        },
+        {
+          "default": 1.0,
+          "name": "sat_on"
+        },
+        {
+          "default": 1.0,
+          "name": "sat_rh"
+        },
+        {
+          "default": 21600.0,
+          "name": "sat_tau_s"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 2592000.0,
+          "name": "transport_time_s"
+        },
+        {
+          "default": 0.25,
+          "name": "vapor_scale_ratio"
+        },
+        {
+          "default": 1.0,
+          "name": "warm_start"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "precipitation",
+        "evaporation",
+        "evaporation_sublimation",
+        "temperature",
+        "ocean_mask",
+        "elevation",
+        "flow_dir",
+        "soil_moisture_prev",
+        "snow_water_equivalent_prev",
+        "glacier_ice_prev",
+        "snow_age_s_prev"
+      ],
+      "name": "land_water",
+      "outputs": [
+        "soil_moisture",
+        "snow_water_equivalent",
+        "glacier_ice",
+        "snow_age_s",
+        "glacier_mask",
+        "runoff",
+        "snowfall",
+        "snowmelt",
+        "ice_melt",
+        "land_storage_m"
+      ],
+      "params": [
+        {
+          "default": 0.0,
+          "name": "balance_residual"
+        },
+        {
+          "default": 0.0,
+          "name": "evap_land_m3s"
+        },
+        {
+          "default": 0.00001,
+          "name": "glacier_flow_coeff"
+        },
+        {
+          "default": 0.5,
+          "name": "glacier_flow_max_frac"
+        },
+        {
+          "default": 0.0,
+          "name": "glacier_ice_volume_m3"
+        },
+        {
+          "default": 0.1,
+          "name": "glacier_mask_min_m"
+        },
+        {
+          "default": 31557600.0,
+          "name": "glacier_persist_s"
+        },
+        {
+          "default": 0.5,
+          "name": "glacier_threshold_m"
+        },
+        {
+          "default": 0.917,
+          "name": "ice_density_ratio"
+        },
+        {
+          "default": 273.15,
+          "name": "melt_T"
+        },
+        {
+          "default": 0.0,
+          "name": "melt_m3s"
+        },
+        {
+          "default": 4.6e-8,
+          "name": "melt_rate_m_per_K_s"
+        },
+        {
+          "default": 0.0,
+          "name": "n_glacier_cells"
+        },
+        {
+          "default": 0.0,
+          "name": "precip_land_m3s"
+        },
+        {
+          "default": 1000.0,
+          "name": "rho_water"
+        },
+        {
+          "default": 0.0,
+          "name": "runoff_m3s"
+        },
+        {
+          "default": 273.15,
+          "name": "snow_T"
+        },
+        {
+          "default": 0.0,
+          "name": "snow_area_m2"
+        },
+        {
+          "default": 0.01,
+          "name": "snow_cover_ref_m"
+        },
+        {
+          "default": 0.001,
+          "name": "snow_min_m"
+        },
+        {
+          "default": 3.0,
+          "name": "snow_ramp_K"
+        },
+        {
+          "default": 0.0,
+          "name": "snowfall_m3s"
+        },
+        {
+          "default": 0.15,
+          "name": "soil_capacity_m"
+        },
+        {
+          "default": 0.0,
+          "name": "soil_fraction_mean"
+        },
+        {
+          "default": 2592000.0,
+          "name": "step_s"
+        },
+        {
+          "default": 0.0,
+          "name": "storage_change_m3s"
+        },
+        {
+          "default": 0.0,
+          "name": "unsupplied_m3s"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "elevation",
+        "ocean_mask",
+        "elevation_filled",
+        "depression_depth",
+        "flow_dir",
+        "flow_order",
+        "runoff",
+        "evaporation"
+      ],
+      "name": "rivers_lakes",
+      "outputs": [
+        "discharge",
+        "river_mask",
+        "lake_id",
+        "lake_depth",
+        "lake_volume",
+        "lake_outflow",
+        "salt_flat"
+      ],
+      "params": [
+        {
+          "default": 0.0,
+          "name": "balance_residual"
+        },
+        {
+          "default": 0.0,
+          "name": "lake_area_m2"
+        },
+        {
+          "default": 3.0,
+          "name": "lake_evap_factor"
+        },
+        {
+          "default": 0.0,
+          "name": "lake_evap_m3s"
+        },
+        {
+          "default": 0.0,
+          "name": "lake_storage_change_m3s"
+        },
+        {
+          "default": 0.0,
+          "name": "lake_volume_m3"
+        },
+        {
+          "default": 0.0,
+          "name": "land_loss_m3s"
+        },
+        {
+          "default": 0.5,
+          "name": "min_lake_depth_m"
+        },
+        {
+          "default": 0.0,
+          "name": "n_lakes"
+        },
+        {
+          "default": 0.0,
+          "name": "n_lakes_dry"
+        },
+        {
+          "default": 0.0,
+          "name": "n_lakes_endorheic"
+        },
+        {
+          "default": 0.0,
+          "name": "n_lakes_spilling"
+        },
+        {
+          "default": 0.0,
+          "name": "n_unresolved_lakes"
+        },
+        {
+          "default": 0.0,
+          "name": "ocean_discharge_m3s"
+        },
+        {
+          "default": 0.0,
+          "name": "precip_land_m3s"
+        },
+        {
+          "default": 1000.0,
+          "name": "rho_water"
+        },
+        {
+          "default": 0.0,
+          "name": "river_cells"
+        },
+        {
+          "default": 100.0,
+          "name": "river_threshold_m3s"
+        },
+        {
+          "default": 0.4,
+          "name": "runoff_coeff"
+        },
+        {
+          "default": 0.0,
+          "name": "sink_inflow_m3s"
+        },
+        {
+          "default": 0.0,
+          "name": "void_outflow_m3s"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "season_temperature",
+        "season_precipitation",
+        "season_soil_moisture"
+      ],
+      "name": "climate_normals",
+      "outputs": [
+        "clim_t_mean_c",
+        "clim_t_cold_c",
+        "clim_t_warm_c",
+        "clim_t_range_k",
+        "clim_p_annual",
+        "clim_p_dry",
+        "clim_p_wet",
+        "clim_p_summer_frac",
+        "clim_months_warm",
+        "clim_gdd",
+        "clim_pet",
+        "clim_aridity",
+        "clim_soil_m"
+      ],
+      "params": [
+        {
+          "default": 1.2,
+          "name": "pet_exp"
+        },
+        {
+          "default": 0.09,
+          "name": "pet_slope"
+        },
+        {
+          "default": 31557600.0,
+          "name": "year_s"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "season_temperature",
+        "season_precipitation",
+        "ocean_mask"
+      ],
+      "name": "koppen",
+      "outputs": [
+        "koppen",
+        "koppen_group"
+      ],
+      "params": [
+        {
+          "default": 31557600.0,
+          "name": "year_s"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "life_growth"
+      ],
+      "inputs": [
+        "clim_aridity",
+        "clim_p_summer_frac",
+        "clim_t_cold_c",
+        "clim_t_mean_c",
+        "clim_t_warm_c",
+        "glacier_mask",
+        "ocean_mask"
+      ],
+      "name": "biomes",
+      "outputs": [
+        "biome",
+        "biome_albedo",
+        "biome_evap_factor",
+        "biome_roughness_m",
+        "biome_color"
+      ],
+      "params": [
+        {
+          "default": 1.0,
+          "name": "canopy_gravity_exp"
+        },
+        {
+          "default": 0.22,
+          "name": "fallback_albedo"
+        },
+        {
+          "default": 1.0,
+          "name": "fallback_evap_factor"
+        },
+        {
+          "default": 0.0,
+          "name": "fallback_roughness_m"
+        },
+        {
+          "default": 0.0,
+          "name": "n_biomes_present"
+        },
+        {
+          "default": 0.0,
+          "name": "n_unclassified"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [
+        "life_growth"
+      ],
+      "inputs": [
+        "clim_t_cold_c",
+        "clim_t_warm_c",
+        "clim_gdd",
+        "clim_aridity",
+        "clim_soil_m",
+        "ocean_mask",
+        "glacier_mask",
+        "biome_roughness_m",
+        "elevation"
+      ],
+      "name": "derived_maps",
+      "outputs": [
+        "soil_fertility",
+        "habitability",
+        "travel_difficulty"
+      ],
+      "params": [
+        {
+          "default": 1.0,
+          "name": "aridity_hi"
+        },
+        {
+          "default": 0.1,
+          "name": "aridity_lo"
+        },
+        {
+          "default": 30.0,
+          "name": "canopy_ref_m"
+        },
+        {
+          "default": 0.4,
+          "name": "fresh_hi"
+        },
+        {
+          "default": 0.05,
+          "name": "fresh_lo"
+        },
+        {
+          "default": 2500.0,
+          "name": "gdd_hi"
+        },
+        {
+          "default": 300.0,
+          "name": "gdd_lo"
+        },
+        {
+          "default": 0.0,
+          "name": "nitrogen_gain"
+        },
+        {
+          "default": 0.0,
+          "name": "sea_level"
+        },
+        {
+          "default": 4.0,
+          "name": "slope_gain"
+        },
+        {
+          "default": 0.1,
+          "name": "soil_ref_m"
+        }
+      ]
+    }
+  ],
+  "params": [
+    {
+      "default": 0.0,
+      "description": "World shape: sphere, cube or flat plane",
+      "group": "world",
+      "max": 2.0,
+      "min": 0.0,
+      "name": "shape",
+      "options": [
+        "sphere",
+        "cube",
+        "plane"
+      ],
+      "scope": "mesh",
+      "unit": "",
+      "widget": "select"
+    },
+    {
+      "default": 3.0,
+      "description": "Mesh resolution level (sphere: icosahedron subdivisions; cube: 4 x level cells per edge; plane: 16 x 8 x level cells)",
+      "group": "world",
+      "max": 5.0,
+      "min": 1.0,
+      "name": "resolution",
+      "scope": "mesh",
+      "unit": "",
+      "widget": "integer"
+    },
+    {
+      "default": 6371.0,
+      "description": "Planet radius (cube: half side; plane: width = circumference)",
+      "group": "world",
+      "max": 20000.0,
+      "min": 500.0,
+      "name": "radius_km",
+      "scope": "mesh",
+      "unit": "km",
+      "widget": "slider"
+    },
+    {
+      "default": 7.0,
+      "description": "Seed for the terrain; same seed and inputs give the same world",
+      "group": "world",
+      "max": 1000000000.0,
+      "min": 0.0,
+      "name": "seed",
+      "scope": "elevation",
+      "unit": "",
+      "widget": "integer"
+    },
+    {
+      "default": 0.7,
+      "description": "Share of the surface (by area) that lies below sea level",
+      "group": "world",
+      "max": 1.0,
+      "min": 0.0,
+      "name": "ocean_fraction",
+      "scope": "elevation",
+      "unit": "",
+      "widget": "slider"
+    },
+    {
+      "default": 9.81,
+      "description": "Surface gravity",
+      "group": "laws",
+      "max": 30.0,
+      "min": 1.0,
+      "name": "surface_gravity",
+      "scope": "climate",
+      "unit": "m/s^2",
+      "widget": "slider"
+    },
+    {
+      "default": 24.0,
+      "description": "Rotation period (0 = no rotation: a static sun, e.g. tidally locked)",
+      "group": "laws",
+      "max": 1000.0,
+      "min": 0.0,
+      "name": "day_length_h",
+      "scope": "climate",
+      "unit": "h",
+      "widget": "slider"
+    },
+    {
+      "default": 365.25,
+      "description": "Orbital period (0 = no orbit: no seasons)",
+      "group": "laws",
+      "max": 5000.0,
+      "min": 0.0,
+      "name": "year_length_days",
+      "scope": "climate",
+      "unit": "day",
+      "widget": "slider"
+    },
+    {
+      "default": 23.4,
+      "description": "Axial tilt",
+      "group": "laws",
+      "max": 90.0,
+      "min": 0.0,
+      "name": "axial_tilt_deg",
+      "scope": "climate",
+      "unit": "deg",
+      "widget": "slider"
+    },
+    {
+      "default": 1361.0,
+      "description": "Star irradiance at the planet (luminosity)",
+      "group": "laws",
+      "max": 3000.0,
+      "min": 200.0,
+      "name": "solar_constant",
+      "scope": "climate",
+      "unit": "W/m^2",
+      "widget": "slider"
+    },
+    {
+      "default": 2.0,
+      "description": "Years of 12 seasons run before the climate normals are taken (the last one is the result)",
+      "group": "solver",
+      "max": 6.0,
+      "min": 1.0,
+      "name": "spinup_years",
+      "scope": "climate",
+      "unit": "yr",
+      "widget": "integer"
+    }
+  ],
+  "presets": [
+    {
+      "description": "Earth-like: 70% ocean, 24 h day, 365 day year, 23.4 degree tilt",
+      "name": "earthlike",
+      "params": {}
+    },
+    {
+      "description": "Desert world: little ocean, a stronger sun",
+      "name": "desert",
+      "params": {
+        "ocean_fraction": 0.15,
+        "solar_constant": 1500.0
+      }
+    },
+    {
+      "description": "Waterworld: almost all ocean",
+      "name": "waterworld",
+      "params": {
+        "ocean_fraction": 0.97
+      }
+    },
+    {
+      "description": "Tidally locked: static sun, no seasons, no tilt",
+      "name": "tidally_locked",
+      "params": {
+        "axial_tilt_deg": 0.0,
+        "day_length_h": 0.0,
+        "solar_constant": 1000.0,
+        "year_length_days": 0.0
+      }
+    },
+    {
+      "description": "Ice age: a dimmer sun, more tilt",
+      "name": "ice_age",
+      "params": {
+        "axial_tilt_deg": 28.0,
+        "solar_constant": 1150.0
+      }
+    }
+  ]
+}

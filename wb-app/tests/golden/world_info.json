@@ -1,0 +1,36 @@
+{
+  "api_version": 1,
+  "can_redo": false,
+  "can_undo": false,
+  "domain": {
+    "kind": "sphere",
+    "mesh_id": "m-a08c77ac43fda0f1",
+    "n_cells": 642,
+    "total_area_m2": 510064471909789.0
+  },
+  "fields": [
+    {
+      "layers": 1,
+      "name": "elevation",
+      "stale": false,
+      "version": 1
+    }
+  ],
+  "job": null,
+  "params": {
+    "axial_tilt_deg": 23.4,
+    "day_length_h": 24.0,
+    "ocean_fraction": 0.7,
+    "radius_km": 6371.0,
+    "resolution": 3.0,
+    "seed": 7.0,
+    "shape": 0.0,
+    "solar_constant": 1361.0,
+    "spinup_years": 2.0,
+    "surface_gravity": 9.81,
+    "year_length_days": 365.25
+  },
+  "preset": "earthlike",
+  "solved": false,
+  "stale": false
+}
