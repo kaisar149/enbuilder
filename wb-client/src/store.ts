@@ -1,7 +1,7 @@
 // A tiny observable store plus `WbApp`, the controller that keeps the store in sync with the server (commands -> queries -> events).
 // UI-only state (camera, open panels, theme, which layer is shown) is NOT here; it lives in the UI package.
 import { WbClient, type ConnectOptions } from './client';
-import type { Ack, Command, FieldData, JobStatus, MeshData, Schema, WbEvent, WorldInfo } from './types';
+import type { Ack, Command, FieldData, JobStatus, MeshData, Schema, VariationField, VariationsInfo, WbEvent, WorldInfo } from './types';
 
 export class Store<S> {
   private listeners = new Set<() => void>();
@@ -24,6 +24,8 @@ export interface JobState {
   fraction: number;
   stage: string;
   status: 'running' | JobStatus;
+  /** What the job is doing (known for jobs this client started). */
+  kind?: 'solve' | 'variations';
 }
 
 export interface WbState {
@@ -35,12 +37,16 @@ export interface WbState {
   fields: Record<string, FieldData>;
   jobs: { current: JobState | null };
   lastError: string | null;
+  /** Part 9c: seeds of the last variation batch (null = none, or the mesh changed). */
+  variations: VariationsInfo | null;
+  /** Fetched variation fields, key = `index:name`. */
+  variationFields: Record<string, VariationField>;
 }
 
 export const fieldKey = (name: string, layer = 0) => `${name}#${layer}`;
 
 export function initialState(): WbState {
-  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null };
+  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null, variations: null, variationFields: {} };
 }
 
 export class WbApp {
@@ -48,6 +54,7 @@ export class WbApp {
   /** Fields somebody asked for; they are refetched when the server says they changed. */
   private watched = new Set<string>();
   private inflight = new Map<string, Promise<FieldData>>();
+  private variationJobs = new Set<number>();
   private doneJobs = new Map<number, JobStatus>();
   private jobWaiters = new Map<number, ((s: JobStatus) => void)[]>();
   private unsub: (() => void)[] = [];
@@ -78,19 +85,37 @@ export class WbApp {
 
   // ---- commands ---------------------------------------------------------------------------------------------------------
   /** Sends a command; the store is refreshed by the events the server pushes, so no polling is needed. */
-  async command(cmd: Command): Promise<Ack> {
+  async command(cmd: Command, opts: { quiet?: boolean } = {}): Promise<Ack> {
     try {
       const ack = await this.client.command(cmd);
-      if (cmd.type === 'solve' && ack.job != null) {
-        this.store.setState({ jobs: { current: { id: ack.job, fraction: 0, stage: 'starting', status: 'running' } } });
+      if ((cmd.type === 'solve' || cmd.type === 'variations') && ack.job != null) {
+        const kind = cmd.type === 'solve' ? 'solve' : 'variations';
+        if (kind === 'variations') this.variationJobs.add(ack.job);
+        this.store.setState({ jobs: { current: { id: ack.job, fraction: 0, stage: 'starting', status: 'running', kind } } });
       }
       // undo/redo/load_preset/set_param change the parameters but may not produce an event when nothing was solved
-      if (cmd.type !== 'solve' && cmd.type !== 'cancel') await this.refreshWorld();
+      if (cmd.type !== 'solve' && cmd.type !== 'cancel' && cmd.type !== 'variations') await this.refreshWorld();
       return ack;
     } catch (e) {
-      this.store.setState({ lastError: (e as Error).message });
+      if (!opts.quiet) this.store.setState({ lastError: (e as Error).message });
       throw e;
     }
+  }
+
+  /** Starts the variations job (`count` alternative seeds, coarse) and resolves with its final status; the seeds are then in `store.variations`. */
+  async generateVariations(count = 6, coarse = true): Promise<JobStatus> {
+    const ack = await this.command({ type: 'variations', count, coarse });
+    return this.waitJob(ack.job as number);
+  }
+
+  /** One kept field of one variation (cached; thumbnails call this lazily). */
+  async ensureVariation(index: number, name: string): Promise<VariationField> {
+    const key = `${index}:${name}`;
+    const cached = this.store.getState().variationFields[key];
+    if (cached) return cached;
+    const f = await this.client.getVariation(index, name);
+    this.store.setState((s) => ({ variationFields: { ...s.variationFields, [key]: f } }));
+    return f;
   }
 
   /** Starts a solve and resolves with the job's final status. */
@@ -107,7 +132,9 @@ export class WbApp {
 
   async refreshWorld(): Promise<WorldInfo> {
     const world = await this.client.getWorldInfo();
-    this.store.setState({ world });
+    // the core drops a variation batch when the mesh changes
+    const v = this.store.getState().variations;
+    this.store.setState(v && v.mesh_id !== world.domain.mesh_id ? { world, variations: null, variationFields: {} } : { world });
     return world;
   }
 
@@ -164,19 +191,23 @@ export class WbApp {
   private async onEvent(e: WbEvent): Promise<void> {
     switch (e.type) {
       case 'job_progress':
-        this.store.setState({ jobs: { current: { id: e.job, fraction: e.fraction, stage: e.stage, status: 'running' } } });
+        this.store.setState({ jobs: { current: { id: e.job, fraction: e.fraction, stage: e.stage, status: 'running', kind: this.variationJobs.has(e.job) ? 'variations' : 'solve' } } });
         break;
       case 'job_done': {
         this.doneJobs.set(e.job, e.status);
         const cur = this.store.getState().jobs.current;
-        this.store.setState({ jobs: { current: { id: e.job, fraction: e.status === 'completed' ? 1 : cur?.fraction ?? 0, stage: cur?.stage ?? '', status: e.status } } });
+        this.store.setState({ jobs: { current: { id: e.job, fraction: e.status === 'completed' ? 1 : cur?.fraction ?? 0, stage: cur?.stage ?? '', status: e.status, kind: this.variationJobs.has(e.job) ? 'variations' : 'solve' } } });
+        if (this.variationJobs.delete(e.job) && e.status === 'completed') {
+          const variations = await this.client.getVariations();
+          this.store.setState({ variations, variationFields: {} });
+        }
         (this.jobWaiters.get(e.job) ?? []).forEach((r) => r(e.status));
         this.jobWaiters.delete(e.job);
         break;
       }
       case 'world_loaded': {
         const mesh = await this.client.getMesh();
-        this.store.setState({ mesh, fields: {} });
+        this.store.setState({ mesh, fields: {}, variations: null, variationFields: {} });
         await this.refreshWorld();
         await this.refetchWatched();
         break;

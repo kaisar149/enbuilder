@@ -1,7 +1,7 @@
 //! `get_schema`: parameters, presets, modules, fields and biomes, generated from the REAL module specs and the parameter tables.
 //! Only field display metadata (unit, colormap, range) is a table here, because the simulation does not carry it.
 use crate::api::API_VERSION;
-use crate::params::{param_defs, presets};
+use crate::params::{group_defs, param_defs, presets};
 use crate::world::{biome_table, pipeline};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -74,6 +74,15 @@ fn schema_scheduler() -> enbuilder::Result<enbuilder::Scheduler> {
     Ok(s)
 }
 
+/// Part 9c: the seasonal (12-layer) twin of each annual field. `solve` stores them (`capture_season`); a client shows season `k` by asking
+/// `get_field` for the twin with `layer = k`. Season `k` is the orbit fraction `(k + 0.5) / count`.
+pub fn seasons_json() -> Value {
+    json!({
+        "count": crate::world::SEASONS,
+        "variants": { "temperature": "season_temperature", "precipitation": "season_precipitation", "soil_moisture": "season_soil_moisture" },
+    })
+}
+
 pub fn schema() -> crate::api::ApiResult<Value> {
     let s = schema_scheduler()?;
     let mut producers: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -102,6 +111,8 @@ pub fn schema() -> crate::api::ApiResult<Value> {
     Ok(json!({
         "api_version": API_VERSION,
         "params": param_defs(),
+        "groups": group_defs(),
+        "seasons": seasons_json(),
         "presets": presets(),
         "modules": modules,
         "loops": loops,

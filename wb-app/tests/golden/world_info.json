@@ -16,6 +16,10 @@
       "version": 1
     }
   ],
+  "history": {
+    "redo": [],
+    "undo": []
+  },
   "job": null,
   "params": {
     "axial_tilt_deg": 23.4,

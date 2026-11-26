@@ -1653,6 +1653,23 @@
       "unit": ""
     }
   ],
+  "groups": [
+    {
+      "advanced": false,
+      "name": "laws",
+      "title": "Laws of physics"
+    },
+    {
+      "advanced": false,
+      "name": "world",
+      "title": "World"
+    },
+    {
+      "advanced": true,
+      "name": "solver",
+      "title": "Solver"
+    }
+  ],
   "loops": [
     {
       "members": [
@@ -2704,6 +2721,7 @@
       "default": 0.0,
       "description": "World shape: sphere, cube or flat plane",
       "group": "world",
+      "identity": true,
       "max": 2.0,
       "min": 0.0,
       "name": "shape",
@@ -2720,6 +2738,7 @@
       "default": 3.0,
       "description": "Mesh resolution level (sphere: icosahedron subdivisions; cube: 4 x level cells per edge; plane: 16 x 8 x level cells)",
       "group": "world",
+      "identity": true,
       "max": 5.0,
       "min": 1.0,
       "name": "resolution",
@@ -2731,6 +2750,7 @@
       "default": 6371.0,
       "description": "Planet radius (cube: half side; plane: width = circumference)",
       "group": "world",
+      "identity": true,
       "max": 20000.0,
       "min": 500.0,
       "name": "radius_km",
@@ -2742,6 +2762,7 @@
       "default": 7.0,
       "description": "Seed for the terrain; same seed and inputs give the same world",
       "group": "world",
+      "identity": true,
       "max": 1000000000.0,
       "min": 0.0,
       "name": "seed",
@@ -2753,6 +2774,7 @@
       "default": 0.7,
       "description": "Share of the surface (by area) that lies below sea level",
       "group": "world",
+      "identity": false,
       "max": 1.0,
       "min": 0.0,
       "name": "ocean_fraction",
@@ -2764,6 +2786,7 @@
       "default": 9.81,
       "description": "Surface gravity",
       "group": "laws",
+      "identity": false,
       "max": 30.0,
       "min": 1.0,
       "name": "surface_gravity",
@@ -2775,6 +2798,7 @@
       "default": 24.0,
       "description": "Rotation period (0 = no rotation: a static sun, e.g. tidally locked)",
       "group": "laws",
+      "identity": false,
       "max": 1000.0,
       "min": 0.0,
       "name": "day_length_h",
@@ -2786,6 +2810,7 @@
       "default": 365.25,
       "description": "Orbital period (0 = no orbit: no seasons)",
       "group": "laws",
+      "identity": false,
       "max": 5000.0,
       "min": 0.0,
       "name": "year_length_days",
@@ -2797,6 +2822,7 @@
       "default": 23.4,
       "description": "Axial tilt",
       "group": "laws",
+      "identity": false,
       "max": 90.0,
       "min": 0.0,
       "name": "axial_tilt_deg",
@@ -2808,6 +2834,7 @@
       "default": 1361.0,
       "description": "Star irradiance at the planet (luminosity)",
       "group": "laws",
+      "identity": false,
       "max": 3000.0,
       "min": 200.0,
       "name": "solar_constant",
@@ -2819,6 +2846,7 @@
       "default": 2.0,
       "description": "Years of 12 seasons run before the climate normals are taken (the last one is the result)",
       "group": "solver",
+      "identity": false,
       "max": 6.0,
       "min": 1.0,
       "name": "spinup_years",
@@ -2866,5 +2894,13 @@
         "solar_constant": 1150.0
       }
     }
-  ]
+  ],
+  "seasons": {
+    "count": 12,
+    "variants": {
+      "precipitation": "season_precipitation",
+      "soil_moisture": "season_soil_moisture",
+      "temperature": "season_temperature"
+    }
+  }
 }

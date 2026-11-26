@@ -100,6 +100,7 @@ pub struct Solved {
     pub table: BiomeTable,
 }
 
+#[derive(Debug)]
 pub enum SolveError {
     Cancelled,
     Failed(String),

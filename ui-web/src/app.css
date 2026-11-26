@@ -60,3 +60,29 @@ button, select { font: inherit; color: inherit; }
   .dock-left, .dock-right { border: 0; flex-direction: row; flex-wrap: wrap; }
   .dock-left .panel, .dock-right .panel { flex: 1 1 220px; }
 }
+
+/* Part 9c: parameter panels */
+.group { border: 1px solid var(--rule); border-radius: var(--radius); padding: var(--space-2); background: var(--surface); }
+.group > summary { cursor: pointer; font-weight: 600; }
+.group[open] > summary { margin-bottom: var(--space-2); }
+.param { display: flex; flex-direction: column; gap: var(--space-1); }
+.param-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-s); }
+.param-head label { flex: 1; text-transform: capitalize; color: var(--ink); }
+.param-default { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.param-inputs { display: flex; align-items: center; gap: var(--space-2); }
+.param-inputs input[type='range'] { flex: 1; min-width: 0; }
+.param-inputs input[type='number'], .param select, .field input[type='number'] { width: 7.5em; padding: 4px var(--space-2); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); color: var(--ink); font-variant-numeric: tabular-nums; }
+.param.has-error input[type='number'] { border-color: var(--bad); }
+.param-unit { font-size: var(--fs-s); color: var(--ink-soft); }
+.btn.tiny { padding: 1px var(--space-2); font-size: var(--fs-s); }
+.grow { flex: 1; }
+.align-end { align-self: flex-end; }
+.dirty { margin: 0; font-size: var(--fs-s); font-weight: 600; }
+.dirty.is-dirty { color: var(--bad); }
+.dirty.is-clean { color: var(--ok); }
+.diffs, .history { margin: 0; padding-left: var(--space-4); font-size: var(--fs-s); color: var(--ink-soft); }
+.history li.current { color: var(--ink); font-weight: 600; }
+.history li.undone { text-decoration: line-through; }
+.thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.thumb { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; padding: var(--space-1); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; font-size: var(--fs-s); }
+.thumb canvas { width: 100%; height: auto; background: var(--map-bg); }

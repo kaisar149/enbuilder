@@ -82,3 +82,56 @@ npm run build:ui                                  # builds ui-web/dist
 ./target/release/wb-server --preset earthlike     # prints http://127.0.0.1:PORT
 ```
 Open the URL. Expect: the elevation map; "Show on map" lists every schema layer with unsolved ones disabled; press Solve, the bar fills and the dropdown unlocks; pick Temperature or Biome and the legend changes; wheel zooms, drag pans, click shows the cell. Change `--preset desert` or `--param shape=1` (cube) / `shape=2` (plane) to see other projections. Dev mode with hot reload: `wb-server --port 8787` in one terminal, `npm run dev:ui` in another, open http://localhost:5173.
+
+---
+
+# Part 9c additions: parameter panels, presets, seeds, variations, seasons, history
+
+## Schema additions (additive; `api_version` stays 1)
+- `params[].identity` (bool): true for `shape`, `resolution`, `radius_km`, `seed`. They define WHICH world it is, so the dirty-vs-preset check ignores them.
+- `groups[]`: `{name, title, advanced}` in display order (`laws`, `world`, `solver[advanced]`). A parameter whose group is missing here still renders (group named after it, not advanced).
+- `seasons`: `{count: 12, variants: {temperature: season_temperature, precipitation: season_precipitation, soil_moisture: season_soil_moisture}}`. Each twin is a field with `count` layers, read with `get_field {name: <twin>, layer: k}`. No new solver work; the twins appear in `world_info.fields` after a solve.
+- `presets[].params` holds the overrides. **A preset resets every parameter it does not mention to its default (the seed too).**
+- Greenhouse, evaporation and erosion parameters from the 9c brief are NOT in the schema yet (not wired to the simulation). They will get controls by themselves the day they are added to `param_defs()`; nothing in the UI names a parameter.
+
+## Widget hints (what `ParamControl` does with `params[].widget`)
+| widget | control |
+|---|---|
+| `slider` | range input + number input, unit label, `default` text, reset button |
+| `integer` | number input (step 1); a range input too when `max - min <= 20` |
+| `select` | `<select>` from `options[]`, value = index |
+All show `description` as tooltip. Errors from the core appear under the control with `role="alert"`, `aria-invalid` on the input.
+
+## Commands and queries added
+- Command `variations {count, coarse=true}` (count 1..12, else `bad_param`): background job, answers `{job}`, progress stage `variation n of N`, `job_done` at the end. Changes no parameter and creates no undo step. `coarse` shortens spin-up to 1 year; the mesh and all other parameters are the current ones. A parameter change cancels the job; a mesh change (resolution, shape, radius) drops the stored batch.
+- Query `get_variations`: `{mesh_id, base_seed, coarse, fields[], items: [{index, seed}]}`; `items` is empty when there is no batch for the current mesh.
+- Query `get_variation {index, name}`: one kept field (`elevation`, `temperature`, `precipitation`, `biome`) in the same binary layout as `get_field`, header plus `variation` and `seed`. Errors: `no_variations`, `bad_variation`, `unknown_field`.
+- **Opening a variation = `set_param seed` + `solve`.** The thumbnail is exactly the world you get (a test proves equality of the biome map).
+
+## world_info addition: history
+`world_info.history = { undo: [..oldest first..], redo: [..next step to re-apply first..] }`, each `{label, preset, changes: [{name, old, new}]}`. Labels are `name: old -> new` or `preset NAME`. A new change clears `redo`. `can_undo`/`can_redo` are unchanged.
+
+## Validation
+`set_param` outside min/max (or a non-integer for `integer`/`select`) fails with `bad_param`, message `parameter 'x' must be in [lo, hi], got v`. The core never clamps; the UI keeps what the user typed and shows the message. A non-number typed locally is flagged locally and never sent.
+
+## wb-client additions
+- `ParamController` (`params.ts`): `edit` (draft, debounced 250 ms), `commit`, `flush`, `reset`, `resetGroup`, `applyPreset`, `undo`, `redo`, `randomSeed`, `solve` (flushes first), `openVariation`. State `ui = {drafts, errors, sending, basePreset}`. Commits are serialised, so order is preserved.
+- Selectors: `paramGroups` (titles and advanced flag), `presetStatus` / `presetTarget` (dirty indicator), `randomSeed`, `seasonVariant`, `seasonsAvailable`, `seasonLabel`, `variationThumbField`, `historyUndo` / `historyRedo`, `fmtParam`.
+- `WbApp`: `generateVariations(count, coarse)`, `ensureVariation(index, name)`, `command(cmd, {quiet})`; store keys `variations` and `variationFields`; `jobs.current.kind` is `solve` or `variations`.
+- `debounce(fn, ms, timers)` with `cancel`, `flush`, `pending`.
+
+## Dirty-vs-preset rule
+Target = every schema default, overridden by the preset's `params`. The world is dirty when a non-identity parameter differs. The base preset is `world.preset` when it is a real preset, else the preset the user last picked (`basePreset`, UI state), else the closest preset. (`world.preset` becomes `custom` after any `set_param`.)
+
+## Panels added (registry ids)
+`preset`, `params`, `variations` (left); `season`, `history`, `world` (right). `world` no longer has the preset select. Seasons are UI state (`MapController.ui.season`, `setSeason(k|null)`); the map swaps in `get_field(<twin>, layer=k)` and keeps the base field's colour range, so no command is sent.
+
+## Demo script
+```
+cargo build --release -p wb-server -p wb-app && npm install && npm run build:ui
+./target/release/wb-server --preset earthlike       # open the printed URL
+```
+1. "Preset" shows Earth like, "Matches Earth like". 2. In "World laws" drag axial tilt from 23.4 to 60: nothing is sent until you stop (one `set_param`), the preset line turns red and lists `axial tilt deg: 23.4 to 60 deg`. 3. Solve. 4. Select Temperature, open "Season", drag the slider: the map changes between seasons with no solve; "Yearly average" returns. 5. Type 120 in tilt: the core's message appears under the control and the value stays 120. 6. Pick Waterworld in the preset list. 7. "Seed and variations": Generate 6 variations, six thumbnails appear, click one: its seed is set and a solve starts. 8. "History" lists every change; Undo/Redo walk through them.
+
+## Tests
+`cargo test -p wb-app` (13 + 6 + 5), `npm run test:client` (28), `npm run test:ui` (jsdom panel tests, real-server demo test, plus the 9b suites).

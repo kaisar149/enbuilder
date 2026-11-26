@@ -9,14 +9,18 @@ export type Command =
   | { type: 'solve' }
   | { type: 'cancel' }
   | { type: 'undo' }
-  | { type: 'redo' };
+  | { type: 'redo' }
+  /** Part 9c: background job solving `count` alternative seeds (coarse = one year of spin-up). Changes no parameter. */
+  | { type: 'variations'; count: number; coarse?: boolean };
 
 export type Query =
   | { type: 'get_schema' }
   | { type: 'get_world_info' }
   | { type: 'get_mesh' }
   | { type: 'get_field'; name: string; layer?: number }
-  | { type: 'get_cell'; cell: number };
+  | { type: 'get_cell'; cell: number }
+  | { type: 'get_variations' }
+  | { type: 'get_variation'; index: number; name: string };
 
 export interface Ack {
   api_version: number;
@@ -56,11 +60,22 @@ export interface ParamDef {
   scope: 'climate' | 'elevation' | 'mesh' | string;
   description: string;
   options?: string[] | null;
+  /** Part 9c: true for parameters that define the world's identity (shape, resolution, radius, seed). Ignored by the preset-dirty check. */
+  identity?: boolean;
+}
+
+export interface GroupDef {
+  name: string;
+  title: string;
+  /** Advanced groups start collapsed. */
+  advanced: boolean;
 }
 
 export interface PresetDef {
   name: string;
   description: string;
+  /** Parameter overrides the preset applies (names not listed keep their default). */
+  params?: Record<string, number>;
   [k: string]: unknown;
 }
 
@@ -95,6 +110,10 @@ export interface Schema {
   fields: FieldMeta[];
   biomes: BiomeDef[];
   colormaps: string[];
+  /** Part 9c: display order and titles of the parameter groups. */
+  groups?: GroupDef[];
+  /** Part 9c: stored season layers: `variants[field]` is a field with `count` layers. */
+  seasons?: { count: number; variants: Record<string, string> };
 }
 
 // ---- world info ---------------------------------------------------------------------------------------------------------------
@@ -110,6 +129,23 @@ export interface WorldInfo {
   job: { id: number; running: boolean } | null;
   can_undo: boolean;
   can_redo: boolean;
+  /** Part 9c. `undo` is oldest first; `redo` lists the next step to re-apply first. */
+  history?: { undo: HistoryEntry[]; redo: HistoryEntry[] };
+}
+
+export interface HistoryEntry {
+  label: string;
+  preset: string;
+  changes: { name: string; old: number; new: number }[];
+}
+
+export interface VariationsInfo {
+  mesh_id: string;
+  base_seed: number | null;
+  coarse: boolean | null;
+  /** Fields kept per variation (elevation, temperature, precipitation, biome). */
+  fields: string[];
+  items: { index: number; seed: number }[];
 }
 
 // ---- mesh and fields ----------------------------------------------------------------------------------------------------------
@@ -160,6 +196,9 @@ export interface FieldData {
   meta: FieldMeta;
   values: Float32Array;
 }
+
+/** A field of one variation (carries the seed that produced it). */
+export type VariationField = FieldData & { seed: number; variation: number };
 
 export interface CellInfo {
   cell: number;

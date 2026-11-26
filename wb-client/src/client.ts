@@ -3,7 +3,7 @@ import { decodeFrame, decodeMesh, f32Array } from './frames';
 import {
   API_VERSION, WIRE_VERSION,
   type Ack, type ApiErrorBody, type CellInfo, type Command, type FieldData, type FieldHeader, type Hello, type MeshData, type MeshHeader,
-  type Query, type Schema, type WbEvent, type WorldInfo,
+  type Query, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
 } from './types';
 
 export class ApiClientError extends Error {
@@ -157,12 +157,14 @@ export class WbClient {
   cancel() { return this.command({ type: 'cancel' }); }
   undo() { return this.command({ type: 'undo' }); }
   redo() { return this.command({ type: 'redo' }); }
+  variations(count: number, coarse = true) { return this.command({ type: 'variations', count, coarse }); }
 
   // ---- queries -------------------------------------------------------------------------------------------------------------
   async queryJson<T>(q: Query): Promise<T> { return (await this.request('query', q)).envelope.result as T; }
   getSchema() { return this.queryJson<Schema>({ type: 'get_schema' }); }
   getWorldInfo() { return this.queryJson<WorldInfo>({ type: 'get_world_info' }); }
   getCell(cell: number) { return this.queryJson<CellInfo>({ type: 'get_cell', cell }); }
+  getVariations() { return this.queryJson<VariationsInfo>({ type: 'get_variations' }); }
 
   async getMesh(): Promise<MeshData> {
     const { envelope, frame } = await this.request('query', { type: 'get_mesh' });
@@ -171,8 +173,19 @@ export class WbClient {
   }
 
   async getField(name: string, layer = 0): Promise<FieldData> {
-    const { envelope, frame } = await this.request('query', { type: 'get_field', name, layer });
-    if (!frame) throw new ApiClientError('bad_frame', 'get_field answered without a binary frame');
+    return this.decodeField(await this.request('query', { type: 'get_field', name, layer }), 'get_field');
+  }
+
+  /** One kept field of one variation (same binary layout as `get_field`; `seed` and `variation` are in `extra`). */
+  async getVariation(index: number, name: string): Promise<VariationField> {
+    const r = await this.request('query', { type: 'get_variation', index, name });
+    const f = this.decodeField(r, 'get_variation');
+    const h = r.envelope.result as { seed: number; variation: number };
+    return { ...f, seed: h.seed, variation: h.variation };
+  }
+
+  private decodeField({ envelope, frame }: { envelope: any; frame?: ReturnType<typeof decodeFrame> }, what: string): FieldData {
+    if (!frame) throw new ApiClientError('bad_frame', `${what} answered without a binary frame`);
     const h = envelope.result as FieldHeader;
     const { mesh_id, version, stale, layers, min, max, count, layer: l, dtype: _d, ...meta } = h;
     return { name: h.name, layer: l, layers, meshId: mesh_id, version, stale, min, max, meta: meta as FieldData['meta'], values: f32Array(frame, 0, count) };

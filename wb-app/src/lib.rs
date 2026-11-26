@@ -5,6 +5,7 @@ pub mod png;
 pub mod raster;
 pub mod schema;
 pub mod session;
+pub mod variations;
 pub mod world;
 
 pub use api::*;

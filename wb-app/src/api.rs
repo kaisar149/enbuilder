@@ -16,7 +16,16 @@ pub enum Command {
     Cancel,
     Undo,
     Redo,
+    /// Part 9c: starts a background job that solves `count` alternative seeds in parallel (`coarse`: one year of spin-up instead of the
+    /// current setting). Results are read with `get_variations` / `get_variation`. Does not change any parameter.
+    Variations {
+        count: usize,
+        #[serde(default = "default_coarse")]
+        coarse: bool,
+    },
 }
+
+fn default_coarse() -> bool { true }
 
 impl Command {
     pub fn name(&self) -> &'static str {
@@ -27,6 +36,7 @@ impl Command {
             Command::Cancel => "cancel",
             Command::Undo => "undo",
             Command::Redo => "redo",
+            Command::Variations { .. } => "variations",
         }
     }
 }
@@ -39,6 +49,10 @@ pub enum Query {
     GetMesh,
     GetField { name: String, #[serde(default)] layer: usize },
     GetCell { cell: usize },
+    /// Part 9c: the seeds of the last variation batch (JSON only).
+    GetVariations,
+    /// Part 9c: one field of one variation (`elevation`, `temperature`, `precipitation` or `biome`), same binary layout as `get_field`.
+    GetVariation { index: usize, name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

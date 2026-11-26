@@ -29,20 +29,44 @@ pub struct ParamDef {
     /// Labels for a "select" widget (value = index).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
+    /// Part 9c: true for parameters that say WHICH world this is (shape, size, seed) rather than how its physics behaves.
+    /// A client does not count them when it tells whether the laws still match a preset.
+    #[serde(default)]
+    pub identity: bool,
 }
 
 fn p(name: &str, group: &str, unit: &str, min: f64, max: f64, default: f64, widget: &str, scope: Scope, description: &str) -> ParamDef {
-    ParamDef { name: name.into(), group: group.into(), unit: unit.into(), min, max, default, widget: widget.into(), description: description.into(), scope, options: vec![] }
+    ParamDef { name: name.into(), group: group.into(), unit: unit.into(), min, max, default, widget: widget.into(), description: description.into(), scope, options: vec![], identity: false }
+}
+
+/// Marks a parameter as part of the world's identity (see `ParamDef::identity`).
+fn id(mut d: ParamDef) -> ParamDef {
+    d.identity = true;
+    d
+}
+
+/// Display metadata for the parameter groups (Part 9c). The UI builds its panels from this list and from `param_defs`; it names no group itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroupDef {
+    pub name: String,
+    pub title: String,
+    /// Advanced groups start collapsed.
+    pub advanced: bool,
+}
+
+pub fn group_defs() -> Vec<GroupDef> {
+    let g = |name: &str, title: &str, advanced: bool| GroupDef { name: name.into(), title: title.into(), advanced };
+    vec![g("laws", "Laws of physics", false), g("world", "World", false), g("solver", "Solver", true)]
 }
 
 pub fn param_defs() -> Vec<ParamDef> {
     let mut shape = p("shape", "world", "", 0.0, 2.0, 0.0, "select", Scope::Mesh, "World shape: sphere, cube or flat plane");
     shape.options = vec!["sphere".into(), "cube".into(), "plane".into()];
     vec![
-        shape,
-        p("resolution", "world", "", 1.0, 5.0, 3.0, "integer", Scope::Mesh, "Mesh resolution level (sphere: icosahedron subdivisions; cube: 4 x level cells per edge; plane: 16 x 8 x level cells)"),
-        p("radius_km", "world", "km", 500.0, 20000.0, 6371.0, "slider", Scope::Mesh, "Planet radius (cube: half side; plane: width = circumference)"),
-        p("seed", "world", "", 0.0, 1.0e9, 7.0, "integer", Scope::Elevation, "Seed for the terrain; same seed and inputs give the same world"),
+        id(shape),
+        id(p("resolution", "world", "", 1.0, 5.0, 3.0, "integer", Scope::Mesh, "Mesh resolution level (sphere: icosahedron subdivisions; cube: 4 x level cells per edge; plane: 16 x 8 x level cells)")),
+        id(p("radius_km", "world", "km", 500.0, 20000.0, 6371.0, "slider", Scope::Mesh, "Planet radius (cube: half side; plane: width = circumference)")),
+        id(p("seed", "world", "", 0.0, 1.0e9, 7.0, "integer", Scope::Elevation, "Seed for the terrain; same seed and inputs give the same world")),
         p("ocean_fraction", "world", "", 0.0, 1.0, 0.7, "slider", Scope::Elevation, "Share of the surface (by area) that lies below sea level"),
         p("surface_gravity", "laws", "m/s^2", 1.0, 30.0, 9.81, "slider", Scope::Climate, "Surface gravity"),
         p("day_length_h", "laws", "h", 0.0, 1000.0, 24.0, "slider", Scope::Climate, "Rotation period (0 = no rotation: a static sun, e.g. tidally locked)"),

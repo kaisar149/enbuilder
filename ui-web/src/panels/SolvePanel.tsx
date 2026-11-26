@@ -2,7 +2,7 @@ import { isJobRunning } from 'wb-client';
 import { useStore } from '../state/hooks';
 import type { PanelProps } from './components';
 
-export function SolvePanel({ app }: PanelProps) {
+export function SolvePanel({ app, ctl }: PanelProps) {
   const running = useStore(app.store, isJobRunning);
   const job = useStore(app.store, (s) => s.jobs.current);
   const world = useStore(app.store, (s) => s.world);
@@ -17,7 +17,7 @@ export function SolvePanel({ app }: PanelProps) {
   return (
     <div className="stack">
       <div className="row">
-        <button className="btn primary" disabled={running} onClick={() => void app.command({ type: 'solve' }).catch(() => undefined)}>Solve</button>
+        <button className="btn primary" disabled={running} onClick={() => void ctl.params.solve().catch(() => undefined)}>Solve</button>
         <button className="btn" disabled={!running} onClick={() => void app.command({ type: 'cancel' }).catch(() => undefined)}>Cancel</button>
       </div>
       {showBar && (
