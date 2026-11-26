@@ -1,0 +1,13 @@
+{
+  "name": "wb-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-free TypeScript client for the enbuilder API (WebSocket client, typed commands/queries, store, selectors). Runs in browsers and in Node.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

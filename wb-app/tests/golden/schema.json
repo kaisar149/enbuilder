@@ -164,6 +164,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "air_density",
       "produced_by": [
@@ -180,6 +181,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "albedo",
       "produced_by": [
@@ -196,6 +198,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "band_coord",
       "produced_by": [
@@ -212,8 +215,10 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "category",
       "name": "biome",
+      "palette": "biomes",
       "produced_by": [
         "biomes"
       ],
@@ -228,6 +233,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "biome_albedo",
       "produced_by": [
@@ -244,6 +250,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "biome_color",
       "produced_by": [
@@ -260,6 +267,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "biome_evap_factor",
       "produced_by": [
@@ -276,6 +284,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "biome_roughness_m",
       "produced_by": [
@@ -292,6 +301,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_aridity",
       "produced_by": [
@@ -308,6 +318,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_gdd",
       "produced_by": [
@@ -324,6 +335,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_months_warm",
       "produced_by": [
@@ -340,6 +352,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_p_annual",
       "produced_by": [
@@ -356,6 +369,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_p_dry",
       "produced_by": [
@@ -372,6 +386,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_p_summer_frac",
       "produced_by": [
@@ -388,6 +403,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_p_wet",
       "produced_by": [
@@ -404,6 +420,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_pet",
       "produced_by": [
@@ -420,6 +437,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_soil_m",
       "produced_by": [
@@ -436,6 +454,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_t_cold_c",
       "produced_by": [
@@ -452,6 +471,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_t_mean_c",
       "produced_by": [
@@ -468,6 +488,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_t_range_k",
       "produced_by": [
@@ -484,6 +505,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "clim_t_warm_c",
       "produced_by": [
@@ -500,6 +522,7 @@
         "scale": 0.001,
         "unit": "km"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "coast_distance",
       "produced_by": [
@@ -516,6 +539,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "coriolis_f",
       "produced_by": [
@@ -532,6 +556,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "depression_depth",
       "produced_by": [
@@ -548,6 +573,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "depth",
       "produced_by": [
@@ -564,6 +590,7 @@
         "scale": 1.0,
         "unit": "m3/s"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "discharge",
       "produced_by": [
@@ -580,6 +607,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "divergence_residual",
       "produced_by": [
@@ -596,6 +624,7 @@
         "scale": 1e-6,
         "unit": "km2"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "drainage_area",
       "produced_by": [
@@ -612,6 +641,7 @@
         "scale": 1.0,
         "unit": "m"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "elevation",
       "produced_by": [
@@ -631,6 +661,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "elevation_filled",
       "produced_by": [
@@ -647,6 +678,7 @@
         "scale": 86400.0,
         "unit": "mm/day"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "evaporation",
       "produced_by": [
@@ -663,6 +695,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "evaporation_sublimation",
       "produced_by": [
@@ -679,6 +712,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "flow_dir",
       "produced_by": [
@@ -695,6 +729,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "flow_order",
       "produced_by": [
@@ -711,6 +746,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "glacier_ice",
       "produced_by": [
@@ -727,6 +763,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "mask",
       "name": "glacier_mask",
       "produced_by": [
@@ -746,6 +783,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "scalar",
       "name": "habitability",
       "produced_by": [
@@ -765,6 +803,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "ice_fraction",
       "produced_by": [
@@ -781,6 +820,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "ice_melt",
       "produced_by": [
@@ -797,6 +837,7 @@
         "scale": 1.0,
         "unit": "W/m2"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "insolation",
       "produced_by": [
@@ -813,8 +854,10 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "category",
       "name": "koppen",
+      "palette": "hash",
       "produced_by": [
         "koppen"
       ],
@@ -829,6 +872,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "koppen_group",
       "produced_by": [
@@ -845,6 +889,7 @@
         "scale": 1.0,
         "unit": "m"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "lake_depth",
       "produced_by": [
@@ -861,6 +906,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "lake_id",
       "produced_by": [
@@ -877,6 +923,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "lake_outflow",
       "produced_by": [
@@ -893,6 +940,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "lake_volume",
       "produced_by": [
@@ -909,6 +957,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "land_availability",
       "produced_by": [
@@ -925,6 +974,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "land_storage_m",
       "produced_by": [
@@ -941,6 +991,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "lift",
       "produced_by": [
@@ -957,6 +1008,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "ocean_component",
       "produced_by": [
@@ -973,6 +1025,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "mask",
       "name": "ocean_mask",
       "produced_by": [
@@ -992,6 +1045,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "precip_conv",
       "produced_by": [
@@ -1008,6 +1062,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "precip_front",
       "produced_by": [
@@ -1024,6 +1079,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "precip_oro",
       "produced_by": [
@@ -1040,6 +1096,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "precip_sat",
       "produced_by": [
@@ -1056,6 +1113,7 @@
         "scale": 86400.0,
         "unit": "mm/day"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "precipitation",
       "produced_by": [
@@ -1076,6 +1134,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "pressure",
       "produced_by": [
@@ -1092,6 +1151,7 @@
         "scale": 0.01,
         "unit": "hPa"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "pressure_sl",
       "produced_by": [
@@ -1108,6 +1168,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "pressure_upper",
       "produced_by": [
@@ -1124,6 +1185,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "mask",
       "name": "river_mask",
       "produced_by": [
@@ -1143,6 +1205,7 @@
         "scale": 86400.0,
         "unit": "mm/day"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "runoff",
       "produced_by": [
@@ -1159,6 +1222,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "salt_flat",
       "produced_by": [
@@ -1175,6 +1239,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "sea_level",
       "produced_by": [
@@ -1191,6 +1256,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "snow_age_s",
       "produced_by": [
@@ -1207,6 +1273,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "scalar",
       "name": "snow_cover",
       "produced_by": [
@@ -1226,6 +1293,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "snow_water_equivalent",
       "produced_by": [
@@ -1242,6 +1310,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "snowfall",
       "produced_by": [
@@ -1258,6 +1327,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "snowmelt",
       "produced_by": [
@@ -1274,6 +1344,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "soil_evap_cap",
       "produced_by": [
@@ -1290,6 +1361,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "scalar",
       "name": "soil_fertility",
       "produced_by": [
@@ -1309,6 +1381,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "scalar",
       "name": "soil_moisture",
       "produced_by": [
@@ -1325,6 +1398,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "sublimation_cap",
       "produced_by": [
@@ -1341,6 +1415,7 @@
         "scale": 1.0,
         "unit": "degC"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "temperature",
       "produced_by": [
@@ -1361,6 +1436,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "temperature_sl",
       "produced_by": [
@@ -1377,6 +1453,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": true,
       "kind": "scalar",
       "name": "travel_difficulty",
       "produced_by": [
@@ -1396,6 +1473,7 @@
         "scale": 1.0,
         "unit": "kg/m2"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "vapor",
       "produced_by": [
@@ -1412,6 +1490,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "vapor_start",
       "produced_by": [
@@ -1428,6 +1507,7 @@
         "scale": 1.0,
         "unit": "m/s"
       },
+      "featured": true,
       "kind": "vector",
       "name": "wind",
       "produced_by": [
@@ -1444,6 +1524,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_corrected",
       "produced_by": [
@@ -1460,6 +1541,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_divergence",
       "produced_by": [
@@ -1476,6 +1558,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_east",
       "produced_by": [
@@ -1492,6 +1575,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_flux",
       "produced_by": [
@@ -1508,6 +1592,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_flux_corrected",
       "produced_by": [
@@ -1524,6 +1609,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_north",
       "produced_by": [
@@ -1540,6 +1626,7 @@
         "scale": 1.0,
         "unit": "m/s"
       },
+      "featured": true,
       "kind": "scalar",
       "name": "wind_speed",
       "produced_by": [
@@ -1556,6 +1643,7 @@
         "scale": 1.0,
         "unit": ""
       },
+      "featured": false,
       "kind": "scalar",
       "name": "wind_upper",
       "produced_by": [

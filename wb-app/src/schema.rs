@@ -38,18 +38,32 @@ const FIELD_META: &[Meta] = &[
 
 pub fn meta_of(name: &str) -> Option<&'static Meta> { FIELD_META.iter().find(|m| m.0 == name) }
 
-pub fn field_json(name: &str) -> Value {
+/// How a category field is coloured: `"biomes"` = the schema `biomes[]` table, `"hash"` = deterministic colour per id.
+/// `None` for non-category fields. (Added in 9b so clients do not hard-code field names.)
+pub fn palette_of(name: &str) -> Option<&'static str> {
     match meta_of(name) {
+        Some(m) if m.1 == "category" => Some(if name == "biome" { "biomes" } else { "hash" }),
+        _ => None,
+    }
+}
+
+pub fn field_json(name: &str) -> Value {
+    let mut j = match meta_of(name) {
         Some(m) => json!({
             "name": name, "kind": m.1, "unit": m.2,
             "display": { "scale": m.3, "offset": m.4, "unit": m.5 },
             "colormap": m.6, "range": m.7.map(|r| json!([r.0, r.1])).unwrap_or(Value::Null), "description": m.8,
+            "featured": true,
         }),
         None => json!({
             "name": name, "kind": "scalar", "unit": "", "display": { "scale": 1.0, "offset": 0.0, "unit": "" },
-            "colormap": "viridis", "range": Value::Null, "description": "",
+            "colormap": "viridis", "range": Value::Null, "description": "", "featured": false,
         }),
+    };
+    if let Some(p) = palette_of(name) {
+        j["palette"] = json!(p);
     }
+    j
 }
 
 /// The scheduler the schema is read from: the solve pipeline plus the stage-E modules.

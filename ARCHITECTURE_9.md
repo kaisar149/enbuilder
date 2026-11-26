@@ -66,3 +66,11 @@ Command-driven session, typed errors, JSON wire format, golden `schema.json` and
 - `get_field` sends layer 0 unless asked; vector fields (wind) are not drawn by `wb-snap` yet.
 - Events are pulled; the adapter (Part 9b) will push them.
 - Elevation changes (seed, ocean fraction) rebuild the world on the calling thread.
+
+## 11. Part 9b: server, client, 2D map viewer
+- **wb-server** (9b-1): std-only HTTP + WebSocket adapter, one session actor thread, localhost only, serves `ui-web/dist` (`--static DIR` overrides). 13 Rust tests.
+- **wb-client** (9b-1): see UI_NOTES. 15 vitest tests against the real binary.
+- **ui-web** (9b-2): React + Vite shell, panel registry, schema-generated layer dropdown, `MapViewport2D`, legend, solve button with progress, cell inspector, preset switcher. 19 vitest tests (`npm run test:ui`).
+- **No simulation code changed in 9b-2.** wb-app changed in 9b-1 only (`featured`, `palette` additive keys).
+- **Parity guarantee:** `ui-web/test/server.test.ts` renders elevation, temperature and biome (sphere) and elevation (cube, plane) both with `wb-snap` and with the browser pipeline and requires under 1% differing pixels; measured 0 differing pixels; a deliberately wrong colormap differs on 100% (negative control).
+- **Colormap duplication:** the stops exist in `wb-app/src/raster.rs` and `ui-web/src/viewport/colormaps.ts`. The parity test catches drift; a later step may export the stops through the schema.

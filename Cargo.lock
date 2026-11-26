@@ -838,6 +838,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wb-server"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wb-app",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,43 @@
+/* Design tokens only. Components never hard-code colours, sizes or fonts: change a variable here (or override it from outside) and the app restyles.
+   Direction: a survey sheet. Cool grey-green paper, deep ink, one indigo accent; the map's own colours are the loudest thing on screen. */
+:root {
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-head: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  --fs-s: 0.8125rem;
+  --fs-m: 0.9375rem;
+  --fs-l: 1.125rem;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --radius: 6px;
+  --dock-w: 280px;
+
+  --bg: #e6ece9;
+  --surface: #f4f7f5;
+  --surface-2: #dbe3df;
+  --ink: #17262e;
+  --ink-soft: #52646c;
+  --rule: #bcc9c3;
+  --accent: #3f43a8;
+  --accent-ink: #ffffff;
+  --ok: #2f7a55;
+  --bad: #a4372a;
+  --map-bg: #cfd9d4;
+  --swatch-unknown: #8a9a93;
+  --focus: #3f43a8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181c22;
+    --surface: #20252d;
+    --surface-2: #2a313b;
+    --ink: #e4e9ee;
+    --ink-soft: #9aa7b3;
+    --rule: #38414d;
+    --accent: #a9aefc;
+    --accent-ink: #14172e;
+    --ok: #6cc59a;
+    --bad: #f08a7a;
+    --map-bg: #12151a;
+    --focus: #a9aefc;
+  }
+}

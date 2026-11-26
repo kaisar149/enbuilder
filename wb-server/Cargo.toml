@@ -1,0 +1,13 @@
+[package]
+name = "wb-server"
+version = "0.1.0"
+edition = "2021"
+description = "Part 9b: local HTTP + WebSocket adapter over wb-app (localhost only), serves the built web client"
+
+[dependencies]
+wb-app = { path = "../wb-app" }
+serde_json = "1"
+
+[[bin]]
+name = "wb-server"
+path = "src/main.rs"
