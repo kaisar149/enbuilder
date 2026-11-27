@@ -18,6 +18,7 @@
   --rule: #bcc9c3;
   --accent: #3f43a8;
   --accent-ink: #ffffff;
+  --selection: #ffffff; /* outline of the selected cell in the 3D view */
   --ok: #2f7a55;
   --bad: #a4372a;
   --map-bg: #cfd9d4;

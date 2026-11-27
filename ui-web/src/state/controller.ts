@@ -4,6 +4,8 @@ import {
   ParamController, Store, WbApp, defaultLayer, fieldKey, layerChoices, layerDecl, seasonVariant, seasonsAvailable, selectField,
   type CellInfo, type FieldData, type LayerDecl, type WbState,
 } from 'wb-client';
+import { RELIEF_FIELD, initialView3D, type View3DState } from '../viewport/view3d';
+import type { BenchResult } from '../viewport/bench';
 
 export interface UiState {
   /** Field shown on the map. */
@@ -14,9 +16,22 @@ export interface UiState {
   cellError: string | null;
   /** Season layer shown on the map (0-based), or null for the yearly normals. UI-only: it never goes to the core. */
   season: number | null;
+  /** Part 9d. Which viewport shows the world. UI-only: the layer list, selection and legend are shared by both. */
+  view: '2d' | '3d';
+  view3d: View3DState;
+  /** Hover tooltip (3D): cell info from `get_cell`, position in CSS px inside the viewport. */
+  hoverInfo: CellInfo | null;
+  hoverPos: { x: number; y: number } | null;
+  /** Renderer in use ('three' | 'stub') and its last frame statistics, for the status line. */
+  renderer: string | null;
+  frame: { fps: number; drawMs: number } | null;
+  bench: BenchResult | 'running' | null;
+  /** Counters the viewport host watches: a request to reset the camera / to run the benchmark. */
+  resetNonce: number;
+  benchNonce: number;
 }
 
-export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null });
+export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0 });
 
 export class MapController {
   readonly ui = new Store<UiState>(initialUi());
@@ -24,6 +39,7 @@ export class MapController {
   readonly params: ParamController;
   private unsub: () => void;
   private shownSeasonKey: string | null = null;
+  private tipVersion = '';
 
   constructor(readonly app: WbApp) {
     this.params = new ParamController(app);
@@ -31,7 +47,7 @@ export class MapController {
     this.sync();
   }
 
-  dispose(): void { this.unsub(); this.params.dispose(); }
+  dispose(): void { this.unsub(); this.params.dispose(); clearTimeout(this.tipTimer); }
 
   /**
    * Keeps the selection valid: picks the first available layer when none is chosen, and falls back when the chosen field disappears
@@ -40,6 +56,8 @@ export class MapController {
   private sync(): void {
     const s = this.app.store.getState();
     if (!s.schema || !s.world) return;
+    const ver = `${s.world.domain.mesh_id}:${s.world.fields.map((f) => f.version).join(',')}`;
+    if (ver !== this.tipVersion) { this.tipVersion = ver; this.tipCache.clear(); }
     const choices = layerChoices(s.schema, s.world);
     const current = this.ui.getState().layer;
     const stillOk = current && choices.some((c) => c.field === current && c.available);
@@ -59,7 +77,23 @@ export class MapController {
     }
     this.shownSeasonKey = key;
     if (variant) void this.app.ensureField(variant, season!).catch(() => undefined);
+    // relief needs the height field, only while the 3D view is on
+    if (this.ui.getState().view === '3d' && s.world.solved) void this.app.ensureField(RELIEF_FIELD).catch(() => undefined);
   }
+
+  /** 2D / 3D switch. Nothing else changes: layer, season, picked cell and legend are the same store values both viewports read. */
+  setView(view: '2d' | '3d'): void {
+    if (this.ui.getState().view === view) return;
+    this.ui.setState({ view, hoverInfo: null, hoverPos: null, frame: null });
+    this.sync();
+  }
+
+  setView3d(patch: Partial<View3DState>): void { this.ui.setState({ view3d: { ...this.ui.getState().view3d, ...patch } }); }
+  resetCamera(): void { this.ui.setState({ resetNonce: this.ui.getState().resetNonce + 1 }); }
+  runBenchmark(): void { this.ui.setState({ benchNonce: this.ui.getState().benchNonce + 1, bench: 'running' }); }
+  setBench(b: BenchResult | null): void { this.ui.setState({ bench: b }); }
+  setRenderer(name: string | null): void { if (this.ui.getState().renderer !== name) this.ui.setState({ renderer: name }); }
+  setFrame(f: { fps: number; drawMs: number } | null): void { this.ui.setState({ frame: f }); }
 
   /** Season slider: pick a stored season layer (`get_field(<twin>, layer=k)`), or null for the yearly normals. No command, no solve. */
   setSeason(season: number | null): void {
@@ -81,13 +115,34 @@ export class MapController {
     await this.app.ensureField(field);
   }
 
-  hover(cell: number | null): void {
-    if (this.ui.getState().hoverCell !== cell) this.ui.setState({ hoverCell: cell });
+  private tipTimer: ReturnType<typeof setTimeout> | undefined;
+  private tipCache = new Map<number, CellInfo>();
+
+  /**
+   * Pointer over the map. In 3D a tooltip follows the pointer: it needs one read-only `get_cell` query per hovered cell, so the query is
+   * delayed (150 ms of rest) and cached per cell and world version, and a stale answer is dropped.
+   */
+  hover(cell: number | null, pos?: { x: number; y: number }): void {
+    const u = this.ui.getState();
+    if (u.hoverCell !== cell) this.ui.setState({ hoverCell: cell });
+    clearTimeout(this.tipTimer);
+    if (u.view !== '3d' || cell === null) { if (u.hoverInfo || u.hoverPos) this.ui.setState({ hoverInfo: null, hoverPos: null }); return; }
+    this.ui.setState({ hoverPos: pos ?? u.hoverPos });
+    const cached = this.tipCache.get(cell);
+    if (cached) { this.ui.setState({ hoverInfo: cached }); return; }
+    this.tipTimer = setTimeout(async () => {
+      try {
+        const info = await this.app.client.getCell(cell);
+        if (this.tipCache.size > 400) this.tipCache.clear();
+        this.tipCache.set(cell, info);
+        if (this.ui.getState().hoverCell === cell) this.ui.setState({ hoverInfo: info });
+      } catch { /* a tooltip is optional: ignore failures */ }
+    }, 150);
   }
 
   /** Click on the map: read-only `get_cell` query for the inspector. */
   async pick(cell: number | null): Promise<void> {
-    if (cell === null) { this.ui.setState({ pickedCell: null, cellInfo: null, cellError: null, season: null }); return; }
+    if (cell === null) { this.ui.setState({ pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0 }); return; }
     this.ui.setState({ pickedCell: cell, cellError: null });
     try {
       const info = await this.app.client.getCell(cell);

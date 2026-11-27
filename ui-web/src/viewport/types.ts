@@ -22,19 +22,64 @@ export interface PickEvent {
   y: number;
 }
 
+/**
+ * Camera of the 3D viewports (globe, cube, flat). Lengths are in units of the world's bounding radius R (sphere radius, cube half side,
+ * plane half width), so the same state means the same view at every resolution. Z is up; `yaw` is measured from +X towards +Y, `pitch` from the
+ * horizon towards +Z. The camera sits at `target * R + R * distance * (cos p cos y, cos p sin y, sin p)` and looks at `target * R`.
+ */
+export interface OrbitCamera {
+  kind: 'orbit';
+  yaw: number;
+  pitch: number;
+  distance: number;
+  target: [number, number, number];
+}
+
+export type AnyCamera = CameraState | OrbitCamera;
+export const isOrbit = (c: AnyCamera): c is OrbitCamera => (c as OrbitCamera).kind === 'orbit';
+
+/** Options only 3D viewports understand. `exaggeration` 0 = flat surface; otherwise elevation x exaggeration is shown (1 = true scale). */
+export interface View3DOptions {
+  exaggeration: number;
+  lighting: 'flat' | 'sun';
+  /** With sun lighting: the night side is dark (true) or only softly shaded (false). */
+  dayNight: boolean;
+  /** Unit vector from the planet towards the star, in the planet frame. */
+  sunDir: [number, number, number];
+  /** Mesh length units per metre of elevation (so exaggeration 1 is true scale). */
+  unitsPerMetre: number;
+}
+
+export const DEFAULT_VIEW3D: View3DOptions = { exaggeration: 20, lighting: 'flat', dayNight: false, sunDir: [1, 0, 0], unitsPerMetre: 1 };
+
 export interface Viewport {
   setMesh(mesh: MeshData): void;
   /** Draws the layers bottom to top. `fields` is keyed by `LayerDecl.id`. */
   setLayers(layers: LayerDecl[], fields: Record<string, FieldData>, ctx?: LayerContext): void;
-  setCamera(camera: CameraState): void;
-  getCamera(): CameraState;
+  /** A viewport ignores a camera of the other family (map camera vs orbit camera). */
+  setCamera(camera: AnyCamera): void;
+  getCamera(): AnyCamera;
   /** Screen position (CSS px, relative to the viewport element) -> cell index. */
   pick(x: number, y: number): number | null;
   resize(): void;
   dispose(): void;
   onPick(listener: (e: PickEvent) => void): () => void;
   onHover(listener: (e: PickEvent) => void): () => void;
-  onCameraChange(listener: (c: CameraState) => void): () => void;
+  onCameraChange(listener: (c: AnyCamera) => void): () => void;
+}
+
+/** Extra surface of the 3D viewports. The 2D map does not implement it. */
+export interface Viewport3D extends Viewport {
+  /** Elevation field (metres) used for relief; null = no relief data. */
+  setElevation(values: Float32Array | null): void;
+  setView(opts: View3DOptions): void;
+  /** Marks the selected cell (outline); null clears it. */
+  setSelection(cell: number | null): void;
+  /** Animated move of the camera so `cell` is centred. */
+  focusCell(cell: number): void;
+  resetView(): void;
+  /** Mean frame time statistics since the last call (null when nothing was drawn). */
+  frameStats(): { frames: number; meanMs: number; maxMs: number } | null;
 }
 
 export const HOME_CAMERA: CameraState = { x: 0.5, y: 0.5, zoom: 1 };

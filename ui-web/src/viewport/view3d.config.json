@@ -1,0 +1,4 @@
+{
+  "_comment": "Data, not code (UI_ARCHITECTURE section 3): which schema field supplies the terrain height for relief. Open decision: replace by a schema flag (role: height) so the UI names no field at all.",
+  "reliefField": "elevation"
+}

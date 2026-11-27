@@ -135,3 +135,34 @@ cargo build --release -p wb-server -p wb-app && npm install && npm run build:ui
 
 ## Tests
 `cargo test -p wb-app` (13 + 6 + 5), `npm run test:client` (28), `npm run test:ui` (jsdom panel tests, real-server demo test, plus the 9b suites).
+
+# Part 9d additions: 3D viewer (globe, cube, flat)
+
+## Structure (renderer swap in one file)
+- `viewport/BaseViewport3D.ts`: everything but drawing (canvas, pointer/wheel/key input, orbit camera + focus animation, `pick`, hover/pick events, colour per cell, relief, selection, frame stats). Renderers implement 8 hooks (`onGeometry`, `onPositions`, `onColors`, `onView`, `onSelection`, `onResize`, `draw`, `onDispose`).
+- `viewport/MeshViewport3D.ts`: Three.js renderer, the ONLY file importing `three`. `viewport/StubViewport.ts` draws nothing (swap proof, no-WebGL fallback). `viewport/factory.ts` chooses and lazy-loads.
+- Pure modules (no DOM, no three): `geometry3d.ts` (mesh -> polygons, relief), `orbit.ts` (camera maths), `pick3d.ts` (ray pick), `sun.ts` (sun direction), `view3d.ts` (options from world params, tooltip rows).
+
+## Camera state format (`OrbitCamera`)
+`{ kind: 'orbit', yaw, pitch, distance, target: [x,y,z] }`. Lengths are multiples of the world's bounding radius R. Z up; yaw from +X towards +Y, pitch from the horizon towards +Z. Camera position = `target*R + R*distance*(cos p cos y, cos p sin y, sin p)`, looking at `target*R`. Vertical FOV 40 deg. Per-shape limits in `orbit.ts`. 2D `CameraState` and orbit cameras are ignored by the other family. UI-only, never sent to the core.
+
+## Mesh to triangles
+One flat-coloured polygon per cell. Corners are circumcentres of (cell, neighbour k, neighbour k+1) in angular order (Voronoi hexagon/pentagon on the sphere, square on cube and plane; plane edge mirrored; cube folds unfolded into the cell's face plane). Triangle fan per cell; corners are owned by one cell, so colour and shading normal are per cell. Relief lifts a corner by the mean relief of the cells meeting there (no cracks), along the radial direction (sphere, cube) or +Z (plane). Relief height = max(elevation, 0) x exaggeration x unitsPerMetre; sea stays flat. unitsPerMetre = mesh radius / (radius_km x 1000).
+
+## Colours and lighting
+Same `cellColors` as the 2D map; renderer uses linear output with colour management off, so a cell has identical bytes in 2D and 3D. Flat mode = unlit. Sun mode = Lambert + directional light along `sunDirection(...)` (same geometry as the core insolation; follows the Season slider and a time-of-day slider); day/night on = near-black night side. Lights are scaled by PI (three r155+ physical units).
+
+## UI state (never reaches the core)
+`ui.view` ('2d'|'3d'), `ui.view3d` {exaggeration, lighting, dayNight, timeOfDay}, hover tooltip (`get_cell`, 150 ms delay, cached per cell and world version), renderer name, frame stats, benchmark. The relief field name is data (`viewport/view3d.config.json`); open decision: a schema flag instead.
+
+## Panel and toolbar
+Registry id `view3d` (left dock): relief, lighting, day/night, time of day, Reset view, Measure frame rate. Map toolbar: 2D map / 3D world toggle, Reset view. The toggle sends no command; layer, season, selected cell and legend are shared.
+
+## Measured numbers (this sandbox: software WebGL, NOT a GPU)
+Real-renderer colour parity: 360/360 sampled cells equal the 2D colour (sphere, cube, plane, relief 0 and 40). Geometry build (`setMesh`) in Chromium: plane 500k cells 0.67 s, cube 505k 0.69 s, sphere 164k 0.8 s, sphere 655k 3.4 s. Software-GL frame rate 1.2-2.5 fps at 160k-655k cells (CPU rasteriser). The interactive-frame-rate criterion on a mid-range GPU is NOT yet measured: press "Measure frame rate" or run `node test/gl/run.mjs <outdir>` on a machine with a GPU (remove the swiftshader flags in run.mjs) and record it here: ______ fps at ______ cells on ______.
+
+## Tests
+`test/part9d_geometry.test.ts` (5), `part9d_pick.test.ts` (8), `part9d_viewport.test.ts` (7, stub swap, picking, parity), `part9d_ui.test.tsx` (3, real wb-server). `test/gl/` is a manual Chromium harness (not in `vitest run`).
+
+## Demo script
+Start wb-server and the UI, Solve, click "3D world", drag to orbit, wheel to zoom, double-click a cell to centre it, raise Relief exaggeration, switch Lighting to Sun, hover a cell for temperature and rainfall, click "2D map" and see the same layer and selection.

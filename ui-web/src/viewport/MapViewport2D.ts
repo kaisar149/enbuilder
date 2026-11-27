@@ -4,7 +4,7 @@
 import type { FieldData, LayerDecl, MeshData } from 'wb-client';
 import { buildPixelCells, makeProjection, type Projection } from './projections';
 import { paintPixels } from './raster';
-import { HOME_CAMERA, type CameraState, type LayerContext, type PickEvent, type Viewport } from './types';
+import { HOME_CAMERA, isOrbit, type AnyCamera, type CameraState, type LayerContext, type PickEvent, type Viewport } from './types';
 
 export interface MapViewportOptions {
   /** Raster width in pixels of the whole map (default 720, the same default as `wb-snap`). */
@@ -27,7 +27,7 @@ export class MapViewport2D implements Viewport {
   private ro: ResizeObserver | null = null;
   private pickL = new Set<Listener<PickEvent>>();
   private hoverL = new Set<Listener<PickEvent>>();
-  private camL = new Set<Listener<CameraState>>();
+  private camL = new Set<Listener<AnyCamera>>();
   private cleanup: (() => void)[] = [];
   private cssW = 1;
   private cssH = 1;
@@ -93,7 +93,8 @@ export class MapViewport2D implements Viewport {
     this.requestDraw();
   }
 
-  setCamera(camera: CameraState): void {
+  setCamera(camera: AnyCamera): void {
+    if (isOrbit(camera)) return; // an orbit camera belongs to a 3D viewport
     this.camera = this.clampCamera(camera);
     this.requestDraw();
     this.camL.forEach((l) => l(this.camera));
@@ -131,7 +132,7 @@ export class MapViewport2D implements Viewport {
 
   onPick(l: Listener<PickEvent>) { this.pickL.add(l); return () => this.pickL.delete(l); }
   onHover(l: Listener<PickEvent>) { this.hoverL.add(l); return () => this.hoverL.delete(l); }
-  onCameraChange(l: Listener<CameraState>) { this.camL.add(l); return () => this.camL.delete(l); }
+  onCameraChange(l: Listener<AnyCamera>) { this.camL.add(l); return () => this.camL.delete(l); }
 
   // ---- geometry ---------------------------------------------------------------------------------------------------------
   /** Size of the map on screen at zoom 1: as large as fits, aspect ratio kept. */

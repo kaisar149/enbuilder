@@ -1,38 +1,87 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { displayValue, metaOf, selectField } from 'wb-client';
 import type { WbApp } from 'wb-client';
 import type { MapController } from './state/controller';
 import { viewLayers } from './state/controller';
 import { useStore } from './state/hooks';
 import { MapViewport2D } from './viewport/MapViewport2D';
-import type { Viewport } from './viewport/types';
+import { createViewport3D } from './viewport/factory';
+import { runBenchmark } from './viewport/bench';
+import { shapeKind } from './viewport/geometry3d';
+import { RELIEF_FIELD, tooltipRows, view3DOptions } from './viewport/view3d';
+import type { Viewport, Viewport3D } from './viewport/types';
 
-/** Hosts a Viewport. Only talks to it through the Viewport interface, so swapping in a globe means changing the constructor line below. */
+const is3D = (v: Viewport | null): v is Viewport3D => !!v && typeof (v as Viewport3D).setView === 'function';
+
+/**
+ * Hosts a Viewport. Only talks to it through the Viewport / Viewport3D interfaces: the 2D map and the 3D renderer (made by viewport/factory.ts)
+ * are interchangeable here, and both read the same layer, season and selection state, so a 2D/3D switch keeps all of them.
+ */
 export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
   const host = useRef<HTMLDivElement>(null);
   const vp = useRef<Viewport | null>(null);
+  /** Bumped when a viewport instance is installed, so the data effects below run again for the new instance. */
+  const [ready, setReady] = useState(0);
   const mesh = useStore(app.store, (s) => s.mesh);
   const schema = useStore(app.store, (s) => s.schema);
+  const world = useStore(app.store, (s) => s.world);
   const appState = useStore(app.store, (s) => s);
   const ui = useStore(ctl.ui, (s) => s);
 
+  // create / replace the viewport when the view kind changes
   useEffect(() => {
-    const v = new MapViewport2D(host.current!);
-    vp.current = v;
-    const off = [v.onHover((e) => ctl.hover(e.cell)), v.onPick((e) => void ctl.pick(e.cell))];
-    return () => { off.forEach((o) => o()); v.dispose(); vp.current = null; };
-  }, [ctl]);
+    let cancelled = false;
+    let made: Viewport | null = null;
+    let off: (() => void)[] = [];
+    const install = (v: Viewport, name: string) => {
+      if (cancelled) { v.dispose(); return; }
+      made = v; vp.current = v;
+      off = [v.onHover((e) => ctl.hover(e.cell, { x: e.x, y: e.y })), v.onPick((e) => void ctl.pick(e.cell))];
+      ctl.setRenderer(name);
+      setReady((n) => n + 1);
+    };
+    if (ui.view === '2d') install(new MapViewport2D(host.current!), '2d');
+    else void createViewport3D(host.current!).then((r) => install(r.viewport, r.renderer));
+    return () => { cancelled = true; off.forEach((o) => o()); made?.dispose(); if (vp.current === made) vp.current = null; };
+  }, [ctl, ui.view]);
 
-  useEffect(() => { if (mesh) vp.current?.setMesh(mesh); }, [mesh]);
+  useEffect(() => { if (mesh) vp.current?.setMesh(mesh); }, [mesh, ready]);
 
   useEffect(() => {
     const v = viewLayers(appState, ui);
     if (v && mesh) vp.current?.setLayers(v.layers, v.fields, { biomes: schema?.biomes ?? [] });
-  }, [appState.fields, appState.schema, ui.layer, mesh, schema]);
+  }, [appState.fields, appState.schema, ui.layer, ui.season, mesh, schema, ready]);
+
+  // 3D only: relief heights, lighting options, selection, camera reset, benchmark, frame statistics
+  const heights = selectField(appState, RELIEF_FIELD)?.values ?? null;
+  useEffect(() => { const v = vp.current; if (is3D(v)) v.setElevation(heights); }, [heights, mesh, ready]);
+  useEffect(() => {
+    const v = vp.current;
+    if (is3D(v)) v.setView(view3DOptions({ ...ui.view3d, season: ui.season }, world, mesh, schema?.seasons?.count ?? 0));
+  }, [ui.view3d, ui.season, world?.params, mesh, ready]);
+  useEffect(() => { const v = vp.current; if (is3D(v)) v.setSelection(ui.pickedCell); }, [ui.pickedCell, mesh, ready]);
+  useEffect(() => { const v = vp.current; if (is3D(v) && ui.resetNonce) v.resetView(); }, [ui.resetNonce]);
+  useEffect(() => {
+    const v = vp.current;
+    if (!is3D(v) || !mesh || !ui.benchNonce) return;
+    void runBenchmark(v, shapeKind(mesh)).then((r) => ctl.setBench(r));
+  }, [ui.benchNonce]);
+  useEffect(() => {
+    if (ui.view !== '3d') return;
+    let last = performance.now();
+    const t = setInterval(() => {
+      const v = vp.current;
+      const s = is3D(v) ? v.frameStats() : null;
+      const now = performance.now();
+      if (s) ctl.setFrame({ fps: (1000 * s.frames) / (now - last), drawMs: s.meanMs });
+      last = now;
+    }, 1000);
+    return () => clearInterval(t);
+  }, [ctl, ui.view]);
 
   const field = ui.layer ? selectField(appState, ui.layer) : undefined;
   const meta = ui.layer ? metaOf(schema, ui.layer) : undefined;
-  let readout = 'Move over the map to read values.';
+  let readout = ui.view === '3d' ? 'Drag to turn the world, wheel to zoom, double-click a cell to centre it.' : 'Move over the map to read values.';
   if (ui.hoverCell !== null && field && meta) {
     const raw = field.values[ui.hoverCell];
     if (meta.kind === 'category') {
@@ -43,9 +92,24 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
       readout = `Cell ${ui.hoverCell}: ${Number.isFinite(v) ? v.toFixed(Math.abs(v) >= 100 ? 0 : 2) : 'no value'} ${meta.display.unit}`.trim();
     }
   }
+  const tipRows = ui.view === '3d' && ui.hoverInfo && ui.hoverInfo.cell === ui.hoverCell ? tooltipRows(schema, ui.hoverInfo, ui.layer) : [];
   return (
     <div className="map-wrap">
+      <div className="map-toolbar" role="toolbar" aria-label="Map view">
+        <div className="seg" role="group" aria-label="2D or 3D">
+          <button type="button" className={ui.view === '2d' ? 'seg-on' : ''} aria-pressed={ui.view === '2d'} onClick={() => ctl.setView('2d')}>2D map</button>
+          <button type="button" className={ui.view === '3d' ? 'seg-on' : ''} aria-pressed={ui.view === '3d'} onClick={() => ctl.setView('3d')}>3D world</button>
+        </div>
+        {ui.view === '3d' && <button type="button" className="btn" onClick={() => ctl.resetCamera()}>Reset view</button>}
+      </div>
       <div className="map-host" ref={host} />
+      {ui.view === '3d' && ui.hoverPos && ui.hoverCell !== null && (
+        <div className="map-tip" role="tooltip" style={{ left: ui.hoverPos.x + 14, top: ui.hoverPos.y + 14 }}>
+          <strong>{ui.hoverInfo?.biome_name ?? `Cell ${ui.hoverCell}`}</strong>
+          {tipRows.map((r) => <div key={r.label}>{r.label}: {r.text}</div>)}
+          {tipRows.length === 0 && <div className="map-tip-wait">Reading cell {ui.hoverCell}</div>}
+        </div>
+      )}
       <div className="map-readout" aria-live="polite">{readout}</div>
     </div>
   );

@@ -12,6 +12,7 @@ export interface PanelDef {
 export const PANEL_REGISTRY: PanelDef[] = [
   { id: 'solve', title: 'Solve', component: 'SolvePanel', default_dock: 'left' },
   { id: 'layers', title: 'Map layer', component: 'LayersPanel', default_dock: 'left' },
+  { id: 'view3d', title: 'View', component: 'View3DPanel', default_dock: 'left' },
   { id: 'preset', title: 'Preset', component: 'PresetPanel', default_dock: 'left' },
   { id: 'params', title: 'World laws', component: 'ParameterPanel', default_dock: 'left' },
   { id: 'variations', title: 'Seed and variations', component: 'VariationsPanel', default_dock: 'left' },

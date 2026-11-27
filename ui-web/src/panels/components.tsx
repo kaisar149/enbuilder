@@ -11,6 +11,7 @@ import { ParameterPanel } from './ParameterPanel';
 import { PresetPanel } from './PresetPanel';
 import { SeasonPanel } from './SeasonPanel';
 import { VariationsPanel } from './VariationsPanel';
+import { View3DPanel } from './View3DPanel';
 import { WorldPanel } from './WorldPanel';
 
 export interface PanelProps {
@@ -19,5 +20,5 @@ export interface PanelProps {
 }
 
 export const PANEL_COMPONENTS: Record<string, ComponentType<PanelProps>> = {
-  SolvePanel, LayersPanel, WorldPanel, CellPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel,
+  SolvePanel, LayersPanel, WorldPanel, CellPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel, View3DPanel,
 };

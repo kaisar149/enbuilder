@@ -31,6 +31,11 @@ describe('data-driven UI', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('only MeshViewport3D.ts imports three', () => {
+    const hits = files.filter((x) => /\.(ts|tsx)$/.test(x) && /from ['"]three['"]/.test(readFileSync(x, 'utf8'))).map((x) => x.replace(src, ''));
+    expect(hits).toEqual(['/viewport/MeshViewport3D.ts']);
+  });
+
   it('every registry component exists, and every panel can be moved by data alone', async () => {
     const { PANEL_REGISTRY, resolveLayout } = await import('../src/panels/registry');
     const { PANEL_COMPONENTS } = await import('../src/panels/components');
