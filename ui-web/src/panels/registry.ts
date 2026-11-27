@@ -12,6 +12,7 @@ export interface PanelDef {
 export const PANEL_REGISTRY: PanelDef[] = [
   { id: 'solve', title: 'Solve', component: 'SolvePanel', default_dock: 'left' },
   { id: 'layers', title: 'Map layer', component: 'LayersPanel', default_dock: 'left' },
+  { id: 'stack', title: 'Layer stack', component: 'LayerStackPanel', default_dock: 'left' },
   { id: 'view3d', title: 'View', component: 'View3DPanel', default_dock: 'left' },
   { id: 'preset', title: 'Preset', component: 'PresetPanel', default_dock: 'left' },
   { id: 'params', title: 'World laws', component: 'ParameterPanel', default_dock: 'left' },
@@ -19,7 +20,7 @@ export const PANEL_REGISTRY: PanelDef[] = [
   { id: 'season', title: 'Season', component: 'SeasonPanel', default_dock: 'right' },
   { id: 'history', title: 'History', component: 'HistoryPanel', default_dock: 'right' },
   { id: 'world', title: 'World', component: 'WorldPanel', default_dock: 'right' },
-  { id: 'cell', title: 'Selected cell', component: 'CellPanel', default_dock: 'right' },
+  { id: 'cell', title: 'Cell inspector', component: 'InspectorPanel', default_dock: 'right' },
   { id: 'legend', title: 'Legend', component: 'LegendPanel', default_dock: 'bottom' },
 ];
 

@@ -1,5 +1,6 @@
 //! wb-app: the headless app core (Part 9a). Commands in, queries out, events pushed; no UI and no rendering types.
 pub mod api;
+pub mod overlays;
 pub mod params;
 pub mod png;
 pub mod raster;

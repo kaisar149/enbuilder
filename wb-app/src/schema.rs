@@ -17,6 +17,8 @@ const FIELD_META: &[Meta] = &[
     ("koppen", "category", "", 1.0, 0.0, "", "category", None, "Koppen class id"),
     ("wind_speed", "scalar", "m s-1", 1.0, 0.0, "m/s", "speed", None, "Surface wind speed"),
     ("wind", "vector", "m s-1", 1.0, 0.0, "m/s", "speed", None, "Surface wind vector (3 layers)"),
+    ("current", "vector", "m s-1", 1.0, 0.0, "m/s", "speed", None, "Ocean surface current vector (3 layers)"),
+    ("current_speed", "scalar", "m s-1", 1.0, 0.0, "m/s", "speed", None, "Ocean surface current speed"),
     ("pressure_sl", "scalar", "Pa", 0.01, 0.0, "hPa", "viridis", None, "Sea-level pressure"),
     ("evaporation", "scalar", "kg m-2 s-1", 86400.0, 0.0, "mm/day", "rain", None, "Evaporation"),
     ("vapor", "scalar", "kg m-2", 1.0, 0.0, "kg/m2", "rain", None, "Column water vapour"),
@@ -77,21 +79,56 @@ fn schema_scheduler() -> enbuilder::Result<enbuilder::Scheduler> {
 /// Part 9c: the seasonal (12-layer) twin of each annual field. `solve` stores them (`capture_season`); a client shows season `k` by asking
 /// `get_field` for the twin with `layer = k`. Season `k` is the orbit fraction `(k + 0.5) / count`.
 pub fn seasons_json() -> Value {
-    json!({
-        "count": crate::world::SEASONS,
-        "variants": { "temperature": "season_temperature", "precipitation": "season_precipitation", "soil_moisture": "season_soil_moisture" },
-    })
+    let variants: serde_json::Map<String, Value> = season_variants().iter().map(|(b, t)| (b.to_string(), json!(t))).collect();
+    json!({ "count": crate::world::SEASONS, "variants": variants })
+}
+
+/// (base field, seasonal twin) pairs; `get_cell` also returns the twelve seasonal values of each (Part 9e).
+pub fn season_variants() -> [(&'static str, &'static str); 3] {
+    [("temperature", "season_temperature"), ("precipitation", "season_precipitation"), ("soil_moisture", "season_soil_moisture")]
+}
+
+/// Part 9e: overlay declarations, as data. `kind`: `vector` (arrows / streaks from a 3-layer vector field), `lines` (polylines from a
+/// core query, `source`), `mask` (cells where `field > threshold`, drawn as `mode` = `fill` or `outline`). `token` names a theme colour
+/// (`--overlay-<token>`); `weight_field` scales line width. The renderer handles kinds and never a specific field.
+pub fn overlays_json() -> Value {
+    json!([
+        { "id": "wind", "label": "Wind", "kind": "vector", "field": "wind", "token": "wind", "animated": true, "unit_hint": "m/s" },
+        { "id": "currents", "label": "Ocean currents", "kind": "vector", "field": "current", "token": "current", "animated": true, "unit_hint": "m/s" },
+        { "id": "rivers", "label": "Rivers", "kind": "lines", "source": "rivers", "weight_field": "discharge", "token": "river" },
+        { "id": "lakes", "label": "Lakes", "kind": "mask", "field": "lake_depth", "threshold": 0.0, "mode": "fill", "token": "lake" },
+        { "id": "coast", "label": "Coastline", "kind": "mask", "field": "ocean_mask", "threshold": 0.5, "mode": "outline", "token": "coast" },
+        { "id": "glaciers", "label": "Glaciers", "kind": "mask", "field": "glacier_mask", "threshold": 0.5, "mode": "outline", "token": "glacier" },
+    ])
+}
+
+/// Part 9e: layer presets, as data. `base` is the scalar/mask/category field shown underneath, `overlays` are overlay ids from the list above
+/// in draw order (first = bottom). Applying a preset replaces the whole stack in one step.
+pub fn layer_presets_json() -> Value {
+    json!([
+        { "id": "terrain", "name": "Terrain", "description": "Relief and coastline", "base": "elevation", "overlays": ["coast", "glaciers"] },
+        { "id": "climate", "name": "Climate", "description": "Wind arrows over rainfall", "base": "precipitation", "overlays": ["coast", "wind"] },
+        { "id": "hydrology", "name": "Hydrology", "description": "Rivers, lakes and relief", "base": "elevation", "overlays": ["glaciers", "lakes", "coast", "rivers"] },
+        { "id": "ocean", "name": "Ocean", "description": "Currents over sea temperature", "base": "temperature", "overlays": ["coast", "currents"] },
+    ])
 }
 
 pub fn schema() -> crate::api::ApiResult<Value> {
     let s = schema_scheduler()?;
     let mut producers: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut modules = vec![];
-    for spec in s.specs() {
+    // Part 9e: the diagnostic ocean-current stages that `solve` also runs (wind stress, gyre forcing, currents)
+    let mut extra = enbuilder::Scheduler::new();
+    enbuilder::add_ocean_stage(&mut extra)?;
+    enbuilder::add_gyre_forcing_stage(&mut extra)?;
+    enbuilder::add_ocean_currents_stage(&mut extra)?;
+    let known: Vec<String> = s.specs().iter().map(|x| x.name.clone()).collect();
+    let all_specs: Vec<_> = s.specs().iter().cloned().chain(extra.specs().iter().filter(|x| !known.contains(&x.name)).cloned()).collect();
+    for spec in &all_specs {
         for o in &spec.outputs {
             producers.entry(o.clone()).or_default().push(spec.name.clone());
         }
-        let params: Vec<Value> = s.module_params(&spec.name).unwrap_or_default().into_iter().map(|(k, v)| json!({ "name": k, "default": v })).collect();
+        let params: Vec<Value> = s.module_params(&spec.name).or_else(|| extra.module_params(&spec.name)).unwrap_or_default().into_iter().map(|(k, v)| json!({ "name": k, "default": v })).collect();
         modules.push(json!({ "name": spec.name, "inputs": spec.inputs, "outputs": spec.outputs, "anomaly_hooks": spec.anomaly_hooks, "params": params }));
     }
     producers.entry("elevation".into()).or_default().push("world".into());
@@ -113,11 +150,14 @@ pub fn schema() -> crate::api::ApiResult<Value> {
         "params": param_defs(),
         "groups": group_defs(),
         "seasons": seasons_json(),
+        "overlays": overlays_json(),
+        "layer_presets": layer_presets_json(),
         "presets": presets(),
         "modules": modules,
         "loops": loops,
         "fields": fields,
         "biomes": biomes,
         "colormaps": ["terrain", "temperature", "rain", "speed", "viridis", "mask", "category"],
+        "layer_kinds": ["scalar", "mask", "category", "vector", "lines"],
     }))
 }

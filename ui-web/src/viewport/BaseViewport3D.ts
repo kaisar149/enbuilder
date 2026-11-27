@@ -2,14 +2,15 @@
 // colour per cell, relief, selection, frame statistics. Renderers (Three.js in MeshViewport3D, nothing in StubViewport) extend it and only
 // implement the `on*` hooks below, so replacing the renderer touches one file. No Three.js import here.
 import type { FieldData, LayerDecl, MeshData } from 'wb-client';
-import { cellColors } from './raster';
+import { cellColors, MISSING } from './raster';
 import {
   buildCellGeometry, cellRelief, cellTop, displaceCorners, shapeKind, type CellGeometry, type ShapeKind,
 } from './geometry3d';
 import { cameraFrame, clampCamera, focusOn, homeCamera, lerpCamera, orbitBy, panBy, rayFromPixel, zoomBy } from './orbit';
 import { pickRay } from './pick3d';
+import { arrowTarget, buildOverlay3D, type Overlay3D } from './overlay3d';
 import {
-  DEFAULT_VIEW3D, isOrbit, type AnyCamera, type LayerContext, type OrbitCamera, type PickEvent, type View3DOptions, type Viewport3D,
+  DEFAULT_VIEW3D, isOrbit, type AnyCamera, type LayerContext, type OrbitCamera, type OverlayItem, type OverlayOptions, type PickEvent, type View3DOptions, type Viewport3D,
 } from './types';
 
 type Listener<T> = (e: T) => void;
@@ -64,6 +65,8 @@ export abstract class BaseViewport3D implements Viewport3D {
   /** Lighting / view options changed. */
   protected abstract onView(): void;
   protected abstract onSelection(corners: Float32Array | null): void;
+  /** Part 9e: overlay geometry changed (new items, new relief, or arrows re-thinned for the camera distance). `list` is bottom to top. */
+  protected abstract onOverlays(list: Overlay3D[]): void;
   protected abstract onResize(w: number, h: number, dpr: number): void;
   /** Draw one frame with `this.camera`. */
   protected abstract draw(): void;
@@ -80,6 +83,7 @@ export abstract class BaseViewport3D implements Viewport3D {
     this.lastHit = -1;
     this.displaced = new Float32Array(3 * this.geom.nCorners);
     this.elevation = null; this.cellRGB = null; this.relief = null; this.reliefMax = 0; this.selection = null;
+    this.overlayItems = []; this.arrowTargetUsed = 0; // overlays belong to the previous mesh; the host sets them again
     this.onGeometry();
     this.rebuildRelief(false);
     this.emitCamera();
@@ -94,7 +98,12 @@ export abstract class BaseViewport3D implements Viewport3D {
       const f = fields[decl.id];
       if (!f || f.values.length !== n) continue;
       const c = cellColors(decl, f.values, ctx);
-      if (!out) { out = c; continue; }
+      if (!out) {
+        out = c;
+        // a faded (or hidden) base layer shows the background colour through it, like the 2D map does
+        if (decl.opacity < 1) for (let i = 0; i < out.length; i++) out[i] = MISSING[i % 3] * (1 - decl.opacity) + c[i] * decl.opacity;
+        continue;
+      }
       const a = decl.opacity;
       for (let i = 0; i < out.length; i++) out[i] = out[i] * (1 - a) + c[i] * a;
     }
@@ -102,6 +111,33 @@ export abstract class BaseViewport3D implements Viewport3D {
     this.cellRGB = out;
     this.onColors();
     this.requestRender();
+  }
+
+  protected overlayItems: OverlayItem[] = [];
+  protected overlayOpts: OverlayOptions = { animate: false };
+  private arrowTargetUsed = 0;
+
+  /** Streaks are a 2D feature (the 3D view draws the arrows); `opts.animate` is accepted and ignored here. */
+  setOverlays(items: OverlayItem[], opts: OverlayOptions = { animate: false }): void {
+    this.overlayItems = items;
+    this.overlayOpts = opts;
+    this.rebuildOverlays();
+    this.requestRender();
+  }
+
+  /** Builds the neutral geometry of every item (overlay3d.ts) and hands it to the renderer. */
+  protected rebuildOverlays(): void {
+    if (!this.mesh || !this.geom) return;
+    this.arrowTargetUsed = arrowTarget(this.camera.distance);
+    const b = { mesh: this.mesh, geom: this.geom, relief: this.relief, arrows: this.arrowTargetUsed };
+    this.onOverlays(this.overlayItems.map((it) => buildOverlay3D(it, b)));
+  }
+
+  /** Re-thins the arrows when the camera has moved far enough to change the number that fit. */
+  private rethinArrows(): void {
+    if (!this.overlayItems.some((i) => i.kind === 'vector')) return;
+    const t = arrowTarget(this.camera.distance);
+    if (this.arrowTargetUsed && Math.abs(Math.log(t / this.arrowTargetUsed)) > 0.5) this.rebuildOverlays();
   }
 
   setElevation(values: Float32Array | null): void {
@@ -202,6 +238,7 @@ export abstract class BaseViewport3D implements Viewport3D {
     displaceCorners(this.geom, this.relief, this.displaced);
     this.onPositions(this.displaced);
     this.pushSelection();
+    this.rebuildOverlays();
     if (render) this.requestRender();
   }
 
@@ -220,7 +257,7 @@ export abstract class BaseViewport3D implements Viewport3D {
     this.onSelection(out);
   }
 
-  private emitCamera(): void { const c = this.getCamera(); this.camL.forEach((l) => l(c)); }
+  private emitCamera(): void { const c = this.getCamera(); this.camL.forEach((l) => l(c)); this.rethinArrows(); }
 
   private animateTo(target: OrbitCamera): void {
     cancelAnimationFrame(this.anim);

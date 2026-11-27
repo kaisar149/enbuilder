@@ -1,7 +1,7 @@
 // A tiny observable store plus `WbApp`, the controller that keeps the store in sync with the server (commands -> queries -> events).
 // UI-only state (camera, open panels, theme, which layer is shown) is NOT here; it lives in the UI package.
 import { WbClient, type ConnectOptions } from './client';
-import type { Ack, Command, FieldData, JobStatus, MeshData, Schema, VariationField, VariationsInfo, WbEvent, WorldInfo } from './types';
+import type { Ack, Command, FieldData, JobStatus, MeshData, OutlineData, RiversData, Schema, VariationField, VariationsInfo, WbEvent, WorldInfo } from './types';
 
 export class Store<S> {
   private listeners = new Set<() => void>();
@@ -41,12 +41,19 @@ export interface WbState {
   variations: VariationsInfo | null;
   /** Fetched variation fields, key = `index:name`. */
   variationFields: Record<string, VariationField>;
+  /** Part 9e: river polylines (null = not fetched or no solve yet). Topology only; each viewport resolves the cells itself. */
+  rivers: RiversData | null;
+  /** Part 9e: outlines, key = `field@threshold`. */
+  outlines: Record<string, OutlineData>;
 }
 
 export const fieldKey = (name: string, layer = 0) => `${name}#${layer}`;
+export const outlineKey = (field: string, threshold = 0.5) => `${field}@${threshold}`;
+/** Fields the river polylines are built from: when one of them changes the cached polylines are dropped. */
+const RIVER_INPUTS = ['flow_dir', 'river_mask', 'discharge'];
 
 export function initialState(): WbState {
-  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null, variations: null, variationFields: {} };
+  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null, variations: null, variationFields: {}, rivers: null, outlines: {} };
 }
 
 export class WbApp {
@@ -54,6 +61,9 @@ export class WbApp {
   /** Fields somebody asked for; they are refetched when the server says they changed. */
   private watched = new Set<string>();
   private inflight = new Map<string, Promise<FieldData>>();
+  private geomInflight = new Map<string, Promise<unknown>>();
+  /** Geometry somebody asked for (`rivers`, `outline:<key>`); refetched when its inputs change. */
+  private watchedGeom = new Set<string>();
   private variationJobs = new Set<number>();
   private doneJobs = new Map<number, JobStatus>();
   private jobWaiters = new Map<number, ((s: JobStatus) => void)[]>();
@@ -167,6 +177,66 @@ export class WbApp {
 
   unwatch(name: string, layer = 0): void { this.watched.delete(fieldKey(name, layer)); }
 
+  // ---- geometry (Part 9e) ------------------------------------------------------------------------------------------------
+  /** River polylines, fetched once per change of the river fields. Rejects with `not_solved` before a solve. */
+  ensureRivers(): Promise<RiversData> {
+    this.watchedGeom.add('rivers');
+    const cached = this.store.getState().rivers;
+    if (cached) return Promise.resolve(cached);
+    const running = this.geomInflight.get('rivers') as Promise<RiversData> | undefined;
+    if (running) return running;
+    const p = this.client
+      .getRivers()
+      .then((r) => {
+        this.store.setState({ rivers: r });
+        return r;
+      })
+      .finally(() => this.geomInflight.delete('rivers'));
+    this.geomInflight.set('rivers', p);
+    return p;
+  }
+
+  /** Outline of `field > threshold`, fetched once per change of that field. */
+  ensureOutline(field: string, threshold = 0.5): Promise<OutlineData> {
+    const key = outlineKey(field, threshold);
+    this.watchedGeom.add(`outline:${key}`);
+    const cached = this.store.getState().outlines[key];
+    if (cached) return Promise.resolve(cached);
+    const running = this.geomInflight.get(key) as Promise<OutlineData> | undefined;
+    if (running) return running;
+    const p = this.client
+      .getOutline(field, threshold)
+      .then((o) => {
+        this.store.setState((s) => ({ outlines: { ...s.outlines, [key]: o } }));
+        return o;
+      })
+      .finally(() => this.geomInflight.delete(key));
+    this.geomInflight.set(key, p);
+    return p;
+  }
+
+  /** Drops cached geometry built from `names` (all of it when `names` is undefined) and refetches what is watched. */
+  private async refreshGeometry(names?: string[]): Promise<void> {
+    const st = this.store.getState();
+    const dropRivers = !names || names.some((n) => RIVER_INPUTS.includes(n));
+    const outlines: Record<string, OutlineData> = {};
+    for (const [k, o] of Object.entries(st.outlines)) if (names && !names.includes(o.field)) outlines[k] = o;
+    this.store.setState({ rivers: dropRivers ? null : st.rivers, outlines });
+    const jobs: Promise<unknown>[] = [];
+    for (const g of this.watchedGeom) {
+      if (g === 'rivers') {
+        if (dropRivers) jobs.push(this.ensureRivers().catch(() => undefined));
+      } else {
+        const key = g.slice('outline:'.length);
+        if (!outlines[key]) {
+          const [field, th] = key.split('@');
+          if (!names || names.includes(field)) jobs.push(this.ensureOutline(field, Number(th)).catch(() => undefined));
+        }
+      }
+    }
+    await Promise.all(jobs);
+  }
+
   // ---- events -----------------------------------------------------------------------------------------------------------
   private enqueue(e: WbEvent): void {
     // handled strictly in order, so a world_loaded is processed before the field_changed that follows it
@@ -207,14 +277,16 @@ export class WbApp {
       }
       case 'world_loaded': {
         const mesh = await this.client.getMesh();
-        this.store.setState({ mesh, fields: {}, variations: null, variationFields: {} });
+        this.store.setState({ mesh, fields: {}, variations: null, variationFields: {}, rivers: null, outlines: {} });
         await this.refreshWorld();
         await this.refetchWatched();
+        await this.refreshGeometry();
         break;
       }
       case 'field_changed':
         await this.refreshWorld();
         await this.refetchWatched(e.names);
+        await this.refreshGeometry(e.names);
         break;
       case 'error':
         this.store.setState({ lastError: e.message });

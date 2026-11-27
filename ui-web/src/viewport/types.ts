@@ -1,6 +1,6 @@
 // The Viewport interface (UI_ARCHITECTURE section 4). Every renderer (2D map, globe, cube, flat, sky islands) implements this and nothing else is
 // allowed to touch pixels. Tools and brushes talk to a viewport only through `pick`.
-import type { BiomeDef, FieldData, LayerDecl, MeshData } from 'wb-client';
+import type { BiomeDef, FieldData, LayerDecl, MeshData, OutlineData, RiversData } from 'wb-client';
 
 /** Renderer-neutral camera. For the 2D map: `x`,`y` = map point at the screen centre in 0..1 map units, `zoom` = 1 shows the whole map. */
 export interface CameraState {
@@ -52,7 +52,35 @@ export interface View3DOptions {
 
 export const DEFAULT_VIEW3D: View3DOptions = { exaggeration: 20, lighting: 'flat', dayNight: false, sunDir: [1, 0, 0], unitsPerMetre: 1 };
 
+/** Part 9e. Style shared by every overlay item. `color` is a resolved CSS colour (from the theme token `--overlay-<token>`). */
+export interface OverlayStyle {
+  id: string;
+  label: string;
+  color: string;
+  opacity: number;
+  blend: 'normal' | 'multiply' | 'screen';
+}
+
+/**
+ * What a viewport draws on top of the scalar layers: DATA only (kinds, never field names). Each viewport resolves the cell ids and vector
+ * components in its own space. Items come bottom to top.
+ */
+export type OverlayItem = OverlayStyle & (
+  | { kind: 'vector'; /** x, y, z components per cell, in mesh space. */ components: [Float32Array, Float32Array, Float32Array]; animated: boolean }
+  | { kind: 'lines'; rivers: RiversData }
+  | { kind: 'mask'; mode: 'outline'; outline: OutlineData }
+  | { kind: 'mask'; mode: 'fill'; values: Float32Array; threshold: number }
+);
+
+/** Options of the overlay drawing that are not data (UI toggles). */
+export interface OverlayOptions {
+  /** Animated streaks for the vector overlays that allow it. */
+  animate: boolean;
+}
+
 export interface Viewport {
+  /** Part 9e. Draws the overlays bottom to top above the scalar layers. Pass [] to clear. Never changes picking or the scalar layers. */
+  setOverlays(items: OverlayItem[], opts?: OverlayOptions): void;
   setMesh(mesh: MeshData): void;
   /** Draws the layers bottom to top. `fields` is keyed by `LayerDecl.id`. */
   setLayers(layers: LayerDecl[], fields: Record<string, FieldData>, ctx?: LayerContext): void;

@@ -2,7 +2,8 @@
 import type { ComponentType } from 'react';
 import type { WbApp } from 'wb-client';
 import type { MapController } from '../state/controller';
-import { CellPanel } from './CellPanel';
+import { InspectorPanel } from './InspectorPanel';
+import { LayerStackPanel } from './LayerStackPanel';
 import { LayersPanel } from './LayersPanel';
 import { LegendPanel } from './LegendPanel';
 import { SolvePanel } from './SolvePanel';
@@ -20,5 +21,5 @@ export interface PanelProps {
 }
 
 export const PANEL_COMPONENTS: Record<string, ComponentType<PanelProps>> = {
-  SolvePanel, LayersPanel, WorldPanel, CellPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel, View3DPanel,
+  SolvePanel, LayersPanel, WorldPanel, InspectorPanel, LayerStackPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel, View3DPanel,
 };

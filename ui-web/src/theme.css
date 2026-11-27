@@ -24,6 +24,14 @@
   --map-bg: #cfd9d4;
   --swatch-unknown: #8a9a93;
   --focus: #3f43a8;
+  /* Part 9e: overlay colours, one token per overlay `token` in the schema (--overlay-<token>). They are drawn on the map, which keeps its colours
+     in both themes, so they are the same in light and dark. */
+  --overlay-wind: #1c2230;
+  --overlay-current: #07286b;
+  --overlay-river: #1f5fe0;
+  --overlay-lake: #3aa0ff;
+  --overlay-coast: #10151c;
+  --overlay-glacier: #e6f6ff;
 }
 
 @media (prefers-color-scheme: dark) {

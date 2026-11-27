@@ -15,7 +15,7 @@ export function HistoryPanel({ app, ctl }: PanelProps) {
       </div>
       {undo.length + redo.length === 0 ? <p className="note">No changes yet.</p> : (
         <ol className="history" aria-label="Parameter history">
-          {undo.map((h, i) => <li key={`u${i}`} className={i === undo.length - 1 ? 'current' : ''} title={h.changes.map((c) => `${c.name}: ${c.old} to ${c.new}`).join('\n')}>{h.label}</li>)}
+          {undo.map((h, i) => <li key={`u${i}`} className={i === undo.length - 1 ? 'is-latest' : ''} title={h.changes.map((c) => `${c.name}: ${c.old} to ${c.new}`).join('\n')}>{h.label}</li>)}
           {[...redo].reverse().map((h, i) => <li key={`r${i}`} className="undone" title="Undone; Redo brings it back">{h.label}</li>)}
         </ol>
       )}

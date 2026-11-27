@@ -55,12 +55,15 @@ export function tooltipRows(schema: Schema | null, info: CellInfo, shown: string
   if (!schema) return [];
   const names: string[] = [];
   if (shown) names.push(shown);
-  for (const f of schema.fields) if (f.featured && f.kind !== 'category' && !names.includes(f.name)) names.push(f.name);
+  // headline fields first: the schema gives those a curated colour range (elevation, temperature, rainfall...); the rest follow in schema order
+  const rest = schema.fields.filter((f) => f.featured && f.kind !== 'category' && !names.includes(f.name));
+  for (const f of [...rest.filter((f) => f.range), ...rest.filter((f) => !f.range)]) names.push(f.name);
   const rows: { label: string; text: string }[] = [];
   for (const n of names) {
     const raw = info.values[n];
     const meta = metaOf(schema, n);
-    if (raw === undefined || !meta || meta.kind === 'category') continue;
+    // a vector or line field has no single number; masks are not readable values
+    if (raw === undefined || !meta || meta.kind === 'category' || meta.kind === 'vector' || meta.kind === 'lines' || meta.kind === 'mask') continue;
     const v = displayValue(meta, raw);
     rows.push({ label: prettyName(n), text: Number.isFinite(v) ? `${v.toFixed(Math.abs(v) >= 100 ? 0 : 1)} ${meta.display.unit}`.trim() : 'no value' });
     if (rows.length >= max) break;

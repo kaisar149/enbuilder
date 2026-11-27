@@ -4,7 +4,8 @@
 import type { FieldData, LayerDecl, MeshData } from 'wb-client';
 import { buildPixelCells, makeProjection, type Projection } from './projections';
 import { paintPixels } from './raster';
-import { HOME_CAMERA, isOrbit, type AnyCamera, type CameraState, type LayerContext, type PickEvent, type Viewport } from './types';
+import { OverlayPainter2D } from './overlayPaint2d';
+import { HOME_CAMERA, isOrbit, type AnyCamera, type CameraState, type LayerContext, type OverlayItem, type OverlayOptions, type PickEvent, type Viewport } from './types';
 
 export interface MapViewportOptions {
   /** Raster width in pixels of the whole map (default 720, the same default as `wb-snap`). */
@@ -34,6 +35,9 @@ export class MapViewport2D implements Viewport {
   private dpr = 1;
   private raf = 0;
   private lastHover: number | null | undefined;
+  /** Part 9e: vectors, lines and masks drawn above the cached bitmap on every frame (pan and zoom only move them). */
+  readonly overlays = new OverlayPainter2D();
+  private animLast = 0;
   readonly rasterWidth: number;
   private minZoom: number;
   private maxZoom: number;
@@ -69,6 +73,7 @@ export class MapViewport2D implements Viewport {
     this.bitmap.width = this.proj.width;
     this.bitmap.height = this.proj.height;
     this.bctx.clearRect(0, 0, this.bitmap.width, this.bitmap.height);
+    this.overlays.setMesh(mesh, this.proj, this.pixelCells);
     this.camera = { ...HOME_CAMERA };
     this.requestDraw();
   }
@@ -90,6 +95,12 @@ export class MapViewport2D implements Viewport {
       sctx.putImageData(img, 0, 0);
       this.bctx.drawImage(scratch, 0, 0); // layers composite bottom to top, each with its own opacity
     }
+    this.requestDraw();
+  }
+
+  setOverlays(items: OverlayItem[], opts: OverlayOptions = { animate: false }): void {
+    this.overlays.setItems(items, opts);
+    this.animLast = 0;
     this.requestDraw();
   }
 
@@ -164,6 +175,15 @@ export class MapViewport2D implements Viewport {
     this.raf = requestAnimationFrame(() => { this.raf = 0; this.draw(); });
   }
 
+  /** While an animated overlay is shown the viewport redraws every frame; otherwise it draws only on demand. */
+  private animate(): void {
+    if (!this.overlays.animating()) { this.animLast = 0; return; }
+    const now = typeof performance !== 'undefined' ? performance.now() : 0;
+    this.overlays.tick(this.animLast ? (now - this.animLast) / 1000 : 0);
+    this.animLast = now;
+    this.requestDraw();
+  }
+
   private draw(): void {
     const { ctx } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -176,6 +196,8 @@ export class MapViewport2D implements Viewport {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = false; // cells are flat-coloured: show them crisp when zoomed
     ctx.drawImage(this.bitmap, dx, dy, dw, dh);
+    if (this.overlays.hasItems()) this.overlays.draw(ctx, { dx, dy, dw, dh, cssW: this.cssW, cssH: this.cssH });
+    this.animate();
   }
 
   // ---- input ------------------------------------------------------------------------------------------------------------

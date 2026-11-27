@@ -2,15 +2,19 @@
 // selection and colours all come from BaseViewport3D and keep working, only the pixels are missing. Also used in tests and as the fallback when
 // WebGL is not available.
 import { BaseViewport3D } from './BaseViewport3D';
+import type { Overlay3D } from './overlay3d';
 
 export class StubViewport extends BaseViewport3D {
   /** What the renderer "received", for tests. */
-  readonly log = { geometry: 0, positions: 0, colors: 0, view: 0, draws: 0, resizes: 0 };
+  readonly log = { geometry: 0, positions: 0, colors: 0, view: 0, draws: 0, resizes: 0, overlays: 0 };
+  /** The overlay geometry the renderer last received (bottom to top). */
+  overlayList: Overlay3D[] = [];
   protected onGeometry(): void { this.log.geometry++; }
   protected onPositions(): void { this.log.positions++; }
   protected onColors(): void { this.log.colors++; }
   protected onView(): void { this.log.view++; }
   protected onSelection(): void { /* nothing to draw */ }
+  protected onOverlays(list: Overlay3D[]): void { this.log.overlays++; this.overlayList = list; }
   protected onResize(): void { this.log.resizes++; }
   protected draw(): void { this.log.draws++; }
   protected onDispose(): void { /* nothing to free */ }

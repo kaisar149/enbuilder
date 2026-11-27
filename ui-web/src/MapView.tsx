@@ -3,6 +3,7 @@ import { displayValue, metaOf, selectField } from 'wb-client';
 import type { WbApp } from 'wb-client';
 import type { MapController } from './state/controller';
 import { viewLayers } from './state/controller';
+import { buildOverlayItems } from './layers/items';
 import { useStore } from './state/hooks';
 import { MapViewport2D } from './viewport/MapViewport2D';
 import { createViewport3D } from './viewport/factory';
@@ -51,6 +52,15 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
     const v = viewLayers(appState, ui);
     if (v && mesh) vp.current?.setLayers(v.layers, v.fields, { biomes: schema?.biomes ?? [] });
   }, [appState.fields, appState.schema, ui.layer, ui.season, mesh, schema, ready]);
+
+  // overlays (Part 9e): vectors, lines and masks above the scalar layers, in the stack's order. Colours come from the theme tokens --overlay-<token>.
+  useEffect(() => {
+    const v = vp.current;
+    if (!v || !mesh || !host.current) return;
+    const css = getComputedStyle(host.current);
+    const resolve = (token: string) => css.getPropertyValue(`--overlay-${token}`).trim() || css.color || 'currentColor';
+    v.setOverlays(buildOverlayItems(appState, schema, ui.stack, resolve), { animate: ui.animate });
+  }, [appState.fields, appState.rivers, appState.outlines, schema, ui.stack, ui.animate, mesh, ready]);
 
   // 3D only: relief heights, lighting options, selection, camera reset, benchmark, frame statistics
   const heights = selectField(appState, RELIEF_FIELD)?.values ?? null;

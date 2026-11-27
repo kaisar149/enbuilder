@@ -14,7 +14,7 @@ import { MapController } from '../src/state/controller';
 import { RELIEF_FIELD } from '../src/viewport/view3d';
 
 const noop = () => undefined;
-const ctx2d = { setTransform: noop, clearRect: noop, drawImage: noop, putImageData: noop, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), imageSmoothingEnabled: true, globalCompositeOperation: '' };
+const ctx2d = { save: noop, restore: noop, beginPath: noop, rect: noop, clip: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop, setTransform: noop, clearRect: noop, drawImage: noop, putImageData: noop, createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), imageSmoothingEnabled: true, globalCompositeOperation: '' };
 // 2D canvas works (stub context); WebGL does not exist in jsdom, so the 3D factory falls back to the stub renderer
 (HTMLCanvasElement.prototype as any).getContext = (kind: string) => (kind === '2d' ? ctx2d : null);
 (globalThis as any).requestAnimationFrame = (f: () => void) => setTimeout(f, 1);
@@ -22,7 +22,7 @@ const ctx2d = { setTransform: noop, clearRect: noop, drawImage: noop, putImageDa
 (globalThis as any).ResizeObserver = undefined;
 
 let srv: RunningServer, app: WbApp, ctl: MapController;
-const commands = () => app.client.sent.filter((r) => !['get_field', 'get_cell', 'get_mesh', 'get_schema', 'get_world_info'].includes(r.type)).map((r) => r.type);
+const commands = () => app.client.sent.filter((r) => !['get_field', 'get_cell', 'get_mesh', 'get_schema', 'get_world_info', 'get_rivers', 'get_outline'].includes(r.type)).map((r) => r.type);
 
 beforeAll(async () => {
   srv = await startServer(['--preset', 'earthlike', '--param', 'resolution=2', '--param', 'spinup_years=1']);

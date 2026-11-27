@@ -19,6 +19,10 @@ export type Query =
   | { type: 'get_mesh' }
   | { type: 'get_field'; name: string; layer?: number }
   | { type: 'get_cell'; cell: number }
+  /** Part 9e: river polylines as cell ids (needs a solve). */
+  | { type: 'get_rivers' }
+  /** Part 9e: edges between cells with `field > threshold` and their neighbours outside (any field). */
+  | { type: 'get_outline'; field: string; threshold?: number }
   | { type: 'get_variations' }
   | { type: 'get_variation'; index: number; name: string };
 
@@ -114,6 +118,41 @@ export interface Schema {
   groups?: GroupDef[];
   /** Part 9c: stored season layers: `variants[field]` is a field with `count` layers. */
   seasons?: { count: number; variants: Record<string, string> };
+  /** Part 9e: overlay declarations (vector / lines / mask), layer presets and the layer kinds a renderer must handle. */
+  overlays?: OverlayDef[];
+  layer_presets?: LayerPresetDef[];
+  layer_kinds?: string[];
+}
+
+export type OverlayKind = 'vector' | 'lines' | 'mask';
+
+export interface OverlayDef {
+  id: string;
+  label: string;
+  kind: OverlayKind;
+  /** vector, mask: the field it reads. */
+  field?: string;
+  /** lines: the geometry query that produces it (`rivers`). */
+  source?: string;
+  /** lines: field that gives the line width (per vertex, from the geometry answer). */
+  weight_field?: string;
+  /** mask: cells with `field > threshold` are inside. */
+  threshold?: number;
+  mode?: 'fill' | 'outline';
+  /** Theme token suffix: the colour is `--overlay-<token>`. */
+  token: string;
+  animated?: boolean;
+  unit_hint?: string;
+}
+
+export interface LayerPresetDef {
+  id: string;
+  name: string;
+  description: string;
+  /** Scalar base field. */
+  base: string;
+  /** Overlay ids, bottom to top. */
+  overlays: string[];
 }
 
 // ---- world info ---------------------------------------------------------------------------------------------------------------
@@ -210,6 +249,31 @@ export interface CellInfo {
   stale: boolean;
   lat_deg?: number;
   lon_deg?: number;
+  /** Part 9e: twelve season values per seasonal field (temperature, precipitation, soil_moisture); only after a solve. */
+  seasonal?: Record<string, number[]>;
+}
+
+/** River polylines (topology only). Line k is `cells[offsets[k] .. offsets[k+1]]`; `discharge` is per vertex (m3/s). */
+export interface RiversData {
+  meshId: string;
+  version: number;
+  stale: boolean;
+  nLines: number;
+  nPoints: number;
+  offsets: Uint32Array;
+  cells: Uint32Array;
+  discharge: Float32Array;
+}
+
+/** Outline edges: edge k joins `pairs[2k]` (inside) and `pairs[2k+1]` (outside neighbour). */
+export interface OutlineData {
+  meshId: string;
+  field: string;
+  threshold: number;
+  version: number;
+  stale: boolean;
+  nEdges: number;
+  pairs: Uint32Array;
 }
 
 // ---- layer declarations (UI_ARCHITECTURE section 3) ---------------------------------------------------------------------------

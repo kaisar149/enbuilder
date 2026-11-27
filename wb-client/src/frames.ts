@@ -1,5 +1,5 @@
 // Binary frame layout (see wb-server/src/protocol.rs): "WBF1" | u32 LE json_len | json | zero padding to a multiple of 4 | payload.
-import type { MeshData, MeshHeader } from './types';
+import type { MeshData, MeshHeader, OutlineData, RiversData } from './types';
 
 export interface DecodedFrame {
   header: any;
@@ -51,4 +51,28 @@ export function decodeMesh(header: MeshHeader, f: DecodedFrame): MeshData {
     adjOffsets: u32Array(f, ao.offset, ao.count),
     adj: u32Array(f, aj.offset, aj.count),
   };
+}
+
+type Layout = { layout: { name: string; dtype: string; count: number; offset: number }[] };
+const layoutItem = (h: Layout, name: string) => {
+  const it = h.layout.find((l) => l.name === name);
+  if (!it) throw new Error(`answer layout has no '${name}'`);
+  return it;
+};
+
+/** Decodes `get_rivers` using the layout table in its header. */
+export function decodeRivers(h: Layout & { mesh_id: string; version: number; stale: boolean; n_lines: number; n_points: number }, f: DecodedFrame): RiversData {
+  const o = layoutItem(h, 'offsets');
+  const c = layoutItem(h, 'cells');
+  const q = layoutItem(h, 'discharge');
+  return {
+    meshId: h.mesh_id, version: h.version, stale: h.stale, nLines: h.n_lines, nPoints: h.n_points,
+    offsets: u32Array(f, o.offset, o.count), cells: u32Array(f, c.offset, c.count), discharge: f32Array(f, q.offset, q.count),
+  };
+}
+
+/** Decodes `get_outline`. */
+export function decodeOutline(h: Layout & { mesh_id: string; field: string; threshold: number; version: number; stale: boolean; n_edges: number }, f: DecodedFrame): OutlineData {
+  const p = layoutItem(h, 'pairs');
+  return { meshId: h.mesh_id, field: h.field, threshold: h.threshold, version: h.version, stale: h.stale, nEdges: h.n_edges, pairs: u32Array(f, p.offset, p.count) };
 }

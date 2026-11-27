@@ -346,6 +346,8 @@ impl Session {
             Query::GetCell { cell } => self.cell(cell),
             Query::GetVariations => Ok(QueryResult { json: self.variations_info(), binary: vec![] }),
             Query::GetVariation { index, name } => self.variation_field(index, &name),
+            Query::GetRivers => self.rivers_query(),
+            Query::GetOutline { field, threshold } => self.outline_query(&field, threshold),
         }
     }
 
@@ -482,6 +484,48 @@ impl Session {
         Ok(QueryResult { json: meta, binary: f32_bytes(values) })
     }
 
+    /// Part 9e: river polylines (cells, offsets, discharge per vertex). Layout table in the header, like `get_mesh`.
+    fn rivers_query(&self) -> ApiResult<QueryResult> {
+        let s = self.solved.as_ref().ok_or_else(|| ApiError::new("not_solved", "rivers need a solve first"))?;
+        let fs = &s.solved.fields;
+        for n in ["flow_dir", "river_mask", "discharge"] {
+            if !fs.has(n) {
+                return Err(ApiError::new("unknown_field", format!("no field '{n}'")));
+            }
+        }
+        let r = crate::overlays::rivers(fs.data("flow_dir")?, fs.data("river_mask")?, fs.data("discharge")?)?;
+        let mut bin = vec![];
+        let mut layout = vec![];
+        layout.push(json!({ "name": "offsets", "dtype": "u32", "count": r.offsets.len(), "offset": bin.len() }));
+        bin.extend(u32_bytes(&r.offsets));
+        layout.push(json!({ "name": "cells", "dtype": "u32", "count": r.cells.len(), "offset": bin.len() }));
+        bin.extend(u32_bytes(&r.cells));
+        layout.push(json!({ "name": "discharge", "dtype": "f32", "count": r.values.len(), "offset": bin.len() }));
+        bin.extend(r.values.iter().flat_map(|x| x.to_le_bytes()));
+        let json = json!({
+            "mesh_id": self.mesh_id, "kind": "rivers", "version": s.version, "stale": s.stale, "n_lines": r.n_lines(), "n_points": r.cells.len(),
+            "endianness": "little", "layout": layout, "bytes": bin.len(),
+        });
+        Ok(QueryResult { json, binary: bin })
+    }
+
+    /// Part 9e: outline of the cells where `field > threshold` (layer 0). Works for any field, including `elevation` (before a solve).
+    fn outline_query(&self, field: &str, threshold: f64) -> ApiResult<QueryResult> {
+        if !threshold.is_finite() {
+            return Err(ApiError::new("bad_param", "threshold must be finite"));
+        }
+        let f = self.field(field, 0)?;
+        let m = &self.domain.mesh;
+        let pairs = crate::overlays::outline(&m.adj_offsets, &m.adj, &f.values, threshold);
+        let bin = u32_bytes(&pairs);
+        let json = json!({
+            "mesh_id": self.mesh_id, "kind": "outline", "field": field, "threshold": threshold, "version": f.version, "stale": f.stale,
+            "n_edges": pairs.len() / 2, "endianness": "little",
+            "layout": [{ "name": "pairs", "dtype": "u32", "count": pairs.len(), "offset": 0 }], "bytes": bin.len(),
+        });
+        Ok(QueryResult { json, binary: bin })
+    }
+
     fn cell(&self, cell: usize) -> ApiResult<QueryResult> {
         let n = self.domain.n_cells();
         if cell >= n {
@@ -508,6 +552,16 @@ impl Session {
             "cell": cell, "centroid": c, "area_m2": self.domain.mesh.area[cell], "values": values, "biome_name": biome_name,
             "neighbors": self.domain.neighbors(cell), "stale": self.is_stale(),
         });
+        // Part 9e: the twelve seasonal values of every seasonal twin (temperature, precipitation, soil moisture) at this cell
+        if let Some(sol) = &self.solved {
+            let mut seasonal = serde_json::Map::new();
+            for (base, twin) in crate::schema::season_variants() {
+                if let (Ok(l), Ok(d)) = (sol.solved.fields.layers(twin), sol.solved.fields.data(twin)) {
+                    seasonal.insert(base.to_string(), json!((0..l).map(|k| d[cell * l + k]).collect::<Vec<f64>>()));
+                }
+            }
+            j["seasonal"] = Value::Object(seasonal);
+        }
         if world::shape_name(&self.params) == "sphere" {
             j["lat_deg"] = json!(up[2].clamp(-1.0, 1.0).asin().to_degrees());
             j["lon_deg"] = json!(up[1].atan2(up[0]).to_degrees());

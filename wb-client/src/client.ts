@@ -1,9 +1,9 @@
 // WebSocket client: typed commands and queries, request/response matching, pushed events, binary frames. Framework-free.
-import { decodeFrame, decodeMesh, f32Array } from './frames';
+import { decodeFrame, decodeMesh, decodeOutline, decodeRivers, f32Array } from './frames';
 import {
   API_VERSION, WIRE_VERSION,
   type Ack, type ApiErrorBody, type CellInfo, type Command, type FieldData, type FieldHeader, type Hello, type MeshData, type MeshHeader,
-  type Query, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
+  type OutlineData, type Query, type RiversData, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
 } from './types';
 
 export class ApiClientError extends Error {
@@ -165,6 +165,20 @@ export class WbClient {
   getWorldInfo() { return this.queryJson<WorldInfo>({ type: 'get_world_info' }); }
   getCell(cell: number) { return this.queryJson<CellInfo>({ type: 'get_cell', cell }); }
   getVariations() { return this.queryJson<VariationsInfo>({ type: 'get_variations' }); }
+
+  /** Part 9e: river polylines as cell ids. Rejects with `not_solved` before a solve. */
+  async getRivers(): Promise<RiversData> {
+    const { envelope, frame } = await this.request('query', { type: 'get_rivers' });
+    if (!frame) throw new ApiClientError('bad_frame', 'get_rivers answered without a binary frame');
+    return decodeRivers(envelope.result, frame);
+  }
+
+  /** Part 9e: outline of `field > threshold` as (inside, outside) cell pairs. */
+  async getOutline(field: string, threshold = 0.5): Promise<OutlineData> {
+    const { envelope, frame } = await this.request('query', { type: 'get_outline', field, threshold });
+    if (!frame) throw new ApiClientError('bad_frame', 'get_outline answered without a binary frame');
+    return decodeOutline(envelope.result, frame);
+  }
 
   async getMesh(): Promise<MeshData> {
     const { envelope, frame } = await this.request('query', { type: 'get_mesh' });

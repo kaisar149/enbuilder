@@ -208,6 +208,23 @@
       "unit": ""
     },
     {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "featured": false,
+      "kind": "scalar",
+      "name": "beta",
+      "produced_by": [
+        "beta_term"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
       "colormap": "category",
       "description": "Biome id (palette in the schema `biomes`)",
       "display": {
@@ -289,6 +306,23 @@
       "name": "biome_roughness_m",
       "produced_by": [
         "biomes"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "featured": false,
+      "kind": "scalar",
+      "name": "boundary_layer_m",
+      "produced_by": [
+        "ocean_currents"
       ],
       "range": null,
       "unit": ""
@@ -547,6 +581,40 @@
       ],
       "range": null,
       "unit": ""
+    },
+    {
+      "colormap": "speed",
+      "description": "Ocean surface current vector (3 layers)",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m/s"
+      },
+      "featured": true,
+      "kind": "vector",
+      "name": "current",
+      "produced_by": [
+        "ocean_currents"
+      ],
+      "range": null,
+      "unit": "m s-1"
+    },
+    {
+      "colormap": "speed",
+      "description": "Ocean surface current speed",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": "m/s"
+      },
+      "featured": true,
+      "kind": "scalar",
+      "name": "current_speed",
+      "produced_by": [
+        "ocean_currents"
+      ],
+      "range": null,
+      "unit": "m s-1"
     },
     {
       "colormap": "viridis",
@@ -1178,6 +1246,23 @@
       "unit": ""
     },
     {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "featured": false,
+      "kind": "scalar",
+      "name": "psi",
+      "produced_by": [
+        "ocean_currents"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
       "colormap": "mask",
       "description": "River cells",
       "display": {
@@ -1386,6 +1471,23 @@
       "name": "soil_moisture",
       "produced_by": [
         "land_water"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "featured": false,
+      "kind": "scalar",
+      "name": "stress_curl",
+      "produced_by": [
+        "wind_stress_curl"
       ],
       "range": null,
       "unit": ""
@@ -1645,6 +1747,23 @@
       },
       "featured": false,
       "kind": "scalar",
+      "name": "wind_stress",
+      "produced_by": [
+        "wind_stress"
+      ],
+      "range": null,
+      "unit": ""
+    },
+    {
+      "colormap": "viridis",
+      "description": "",
+      "display": {
+        "offset": 0.0,
+        "scale": 1.0,
+        "unit": ""
+      },
+      "featured": false,
+      "kind": "scalar",
       "name": "wind_upper",
       "produced_by": [
         "wind"
@@ -1668,6 +1787,57 @@
       "advanced": true,
       "name": "solver",
       "title": "Solver"
+    }
+  ],
+  "layer_kinds": [
+    "scalar",
+    "mask",
+    "category",
+    "vector",
+    "lines"
+  ],
+  "layer_presets": [
+    {
+      "base": "elevation",
+      "description": "Relief and coastline",
+      "id": "terrain",
+      "name": "Terrain",
+      "overlays": [
+        "coast",
+        "glaciers"
+      ]
+    },
+    {
+      "base": "precipitation",
+      "description": "Wind arrows over rainfall",
+      "id": "climate",
+      "name": "Climate",
+      "overlays": [
+        "coast",
+        "wind"
+      ]
+    },
+    {
+      "base": "elevation",
+      "description": "Rivers, lakes and relief",
+      "id": "hydrology",
+      "name": "Hydrology",
+      "overlays": [
+        "glaciers",
+        "lakes",
+        "coast",
+        "rivers"
+      ]
+    },
+    {
+      "base": "temperature",
+      "description": "Currents over sea temperature",
+      "id": "ocean",
+      "name": "Ocean",
+      "overlays": [
+        "coast",
+        "currents"
+      ]
     }
   ],
   "loops": [
@@ -2714,6 +2884,202 @@
           "name": "soil_ref_m"
         }
       ]
+    },
+    {
+      "anomaly_hooks": [
+        "wind_forcing"
+      ],
+      "inputs": [
+        "wind",
+        "ocean_mask",
+        "ice_fraction"
+      ],
+      "name": "wind_stress",
+      "outputs": [
+        "wind_stress"
+      ],
+      "params": [
+        {
+          "default": 0.0013,
+          "name": "cd_stress"
+        },
+        {
+          "default": 1.2,
+          "name": "rho_air"
+        }
+      ]
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "wind_stress",
+        "ocean_mask"
+      ],
+      "name": "wind_stress_curl",
+      "outputs": [
+        "stress_curl"
+      ],
+      "params": []
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "coriolis_f"
+      ],
+      "name": "beta_term",
+      "outputs": [
+        "beta"
+      ],
+      "params": []
+    },
+    {
+      "anomaly_hooks": [],
+      "inputs": [
+        "stress_curl",
+        "beta",
+        "ocean_mask",
+        "ocean_component"
+      ],
+      "name": "ocean_currents",
+      "outputs": [
+        "psi",
+        "current",
+        "current_speed",
+        "boundary_layer_m"
+      ],
+      "params": [
+        {
+          "default": 20.0,
+          "name": "H_mixed_m"
+        },
+        {
+          "default": 1.0,
+          "name": "beta_on"
+        },
+        {
+          "default": 0.0,
+          "name": "cg_iterations"
+        },
+        {
+          "default": 0.0,
+          "name": "clamped_cells"
+        },
+        {
+          "default": 1.0,
+          "name": "coast_slip"
+        },
+        {
+          "default": 0.0,
+          "name": "layer_cells_median"
+        },
+        {
+          "default": 0.0,
+          "name": "layer_cells_min"
+        },
+        {
+          "default": 3.0,
+          "name": "max_current"
+        },
+        {
+          "default": 0.0,
+          "name": "max_speed_raw"
+        },
+        {
+          "default": 0.00001,
+          "name": "r_friction"
+        },
+        {
+          "default": 1025.0,
+          "name": "rho_water"
+        },
+        {
+          "default": 0.0,
+          "name": "slipped_cells"
+        },
+        {
+          "default": 0.0,
+          "name": "solver_kind"
+        },
+        {
+          "default": 0.0,
+          "name": "solver_restarts"
+        },
+        {
+          "default": 0.0,
+          "name": "unanchored_cells"
+        },
+        {
+          "default": 0.0,
+          "name": "under_resolved"
+        },
+        {
+          "default": 0.0,
+          "name": "under_resolved_fraction"
+        },
+        {
+          "default": 1.0,
+          "name": "wall_pin"
+        },
+        {
+          "default": 0.0,
+          "name": "wall_pinned_cells"
+        }
+      ]
+    }
+  ],
+  "overlays": [
+    {
+      "animated": true,
+      "field": "wind",
+      "id": "wind",
+      "kind": "vector",
+      "label": "Wind",
+      "token": "wind",
+      "unit_hint": "m/s"
+    },
+    {
+      "animated": true,
+      "field": "current",
+      "id": "currents",
+      "kind": "vector",
+      "label": "Ocean currents",
+      "token": "current",
+      "unit_hint": "m/s"
+    },
+    {
+      "id": "rivers",
+      "kind": "lines",
+      "label": "Rivers",
+      "source": "rivers",
+      "token": "river",
+      "weight_field": "discharge"
+    },
+    {
+      "field": "lake_depth",
+      "id": "lakes",
+      "kind": "mask",
+      "label": "Lakes",
+      "mode": "fill",
+      "threshold": 0.0,
+      "token": "lake"
+    },
+    {
+      "field": "ocean_mask",
+      "id": "coast",
+      "kind": "mask",
+      "label": "Coastline",
+      "mode": "outline",
+      "threshold": 0.5,
+      "token": "coast"
+    },
+    {
+      "field": "glacier_mask",
+      "id": "glaciers",
+      "kind": "mask",
+      "label": "Glaciers",
+      "mode": "outline",
+      "threshold": 0.5,
+      "token": "glacier"
     }
   ],
   "params": [

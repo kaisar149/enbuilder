@@ -53,7 +53,13 @@ pub enum Query {
     GetVariations,
     /// Part 9c: one field of one variation (`elevation`, `temperature`, `precipitation` or `biome`), same binary layout as `get_field`.
     GetVariation { index: usize, name: String },
+    /// Part 9e: river polylines as cell paths (topology only), binary. Needs a solve.
+    GetRivers,
+    /// Part 9e: edges between cells inside a mask (`field > threshold`, default 0.5) and their outside neighbours, binary pairs of cell ids.
+    GetOutline { field: String, #[serde(default = "default_threshold")] threshold: f64 },
 }
+
+fn default_threshold() -> f64 { 0.5 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

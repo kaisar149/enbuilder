@@ -115,3 +115,73 @@ export function buildPixelCells(mesh: MeshData, proj: Projection): Int32Array {
   }
   return out;
 }
+
+/** Forward map: a point in mesh space -> map units (u, v in 0..1, v down) of the same projection `makeProjection` inverts. null = no place on the map. */
+export type Forward = (p: [number, number, number], ref?: [number, number]) => [number, number] | null;
+
+/**
+ * Part 9e. The inverse of `makeProjection`, used to put overlay geometry (derived from cell ids) on the map. `ref` is a map point of a nearby
+ * vertex: the sphere map then unwraps the longitude next to it (no jump over the date line) and the cube cross keeps the face of `ref`
+ * (so a segment that starts on a face is drawn in that face, even when it ends just past the edge).
+ */
+export function makeForward(mesh: MeshData): Forward {
+  const c = mesh.centroid;
+  const n = mesh.nCells;
+  switch (mesh.kind) {
+    case 'cube': {
+      let half = 0;
+      for (let i = 0; i < c.length; i++) half = Math.max(half, Math.abs(c[i]));
+      half = half || 1;
+      // face index 0..5: -X, -Y, +X, +Y, +Z, -Z  ->  [column, row]
+      const slot: [number, number][] = [[0, 1], [1, 1], [2, 1], [3, 1], [1, 0], [1, 2]];
+      const faceOf = (x: number, y: number, z: number) => {
+        const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+        if (ax >= ay && ax >= az) return x < 0 ? 0 : 2;
+        return ay >= az ? (y < 0 ? 1 : 3) : z > 0 ? 4 : 5;
+      };
+      const faceMapU = (f: number, x: number, y: number, z: number): [number, number] => {
+        switch (f) {
+          case 0: return [-y, z];
+          case 1: return [x, z];
+          case 2: return [y, z];
+          case 3: return [-x, z];
+          case 4: return [x, y];
+          default: return [x, -y];
+        }
+      };
+      let lastRef: [number, number] | undefined;
+      let lastFace = -1;
+      const faceOfMapPoint = (r: [number, number]): number => {
+        const fc = Math.min(3, Math.floor(r[0] * 4)), fr = Math.min(2, Math.floor(r[1] * 3));
+        return slot.findIndex((s) => s[0] === fc && s[1] === fr);
+      };
+      return (p, ref) => {
+        let f = faceOf(p[0], p[1], p[2]);
+        if (ref) {
+          if (ref !== lastRef) { lastRef = ref; lastFace = faceOfMapPoint(ref); }
+          if (lastFace >= 0) f = lastFace;
+        }
+        const [a, b] = faceMapU(f, p[0] / half, p[1] / half, p[2] / half);
+        const [fc, fr] = slot[f];
+        return [(fc + (a + 1) / 2) / 4, (fr + (1 - b) / 2) / 3];
+      };
+    }
+    case 'plane': {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < n; i++) {
+        x0 = Math.min(x0, c[3 * i]); x1 = Math.max(x1, c[3 * i]);
+        y0 = Math.min(y0, c[3 * i + 1]); y1 = Math.max(y1, c[3 * i + 1]);
+      }
+      const ex = Math.max(x1 - x0, 1e-9), ey = Math.max(y1 - y0, 1e-9);
+      return (p) => [(p[0] - x0) / ex, (y1 - p[1]) / ey];
+    }
+    default:
+      return (p, ref) => {
+        const l = Math.hypot(p[0], p[1], p[2]) || 1;
+        let u = (Math.atan2(p[1], p[0]) / Math.PI + 1) / 2;
+        const v = 0.5 - Math.asin(Math.max(-1, Math.min(1, p[2] / l))) / Math.PI;
+        if (ref) { while (u - ref[0] > 0.5) u -= 1; while (u - ref[0] < -0.5) u += 1; }
+        return [u, v];
+      };
+  }
+}

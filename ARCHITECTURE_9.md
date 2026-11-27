@@ -86,3 +86,6 @@ Command-driven session, typed errors, JSON wire format, golden `schema.json` and
 
 ## 13. Part 9d: 3D viewer
 No API change: no new commands, queries, events or schema entries (`api_version` stays 1). 3D uses `get_mesh`, `get_field` (the height field for relief) and `get_cell` (tooltip). Viewport interface additions (types.ts): `AnyCamera` (map or orbit), `Viewport3D` (setElevation, setView, setSelection, focusCell, resetView, frameStats). No simulation code changed. Details, camera format and measured numbers: UI_NOTES.md, Part 9d.
+
+## 14. Part 9e: overlays, layer stack, inspector
+New queries (api_version stays 1, additive): `get_rivers`, `get_outline {field, threshold}` (binary u32 topology, see UI_NOTES 9e). `get_cell` gains `seasonal`. Schema gains `overlays[]`, `layer_presets[]`, `layer_kinds[]`, and a `current` field family (ocean current vector). Core files: `wb-app/src/overlays.rs` (river polylines from flow_dir/river_mask/discharge; outline edges), `schema.rs`, `session.rs`, `world.rs`. Simulation crate: read-only hooks and metadata only. Golden schema updated (`tests/golden/schema.json`). Tests: `wb-app/tests/part9e.rs`.

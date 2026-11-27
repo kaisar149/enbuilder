@@ -149,6 +149,20 @@ pub fn solve(p: &Params, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str
     let (t, pr) = (mean("season_temperature")?, mean("season_precipitation")?);
     f.put("temperature", 1, t)?;
     f.put("precipitation", 1, pr)?;
+    // Part 9e: one diagnostic pass of the existing ocean stages (wind stress -> curl -> Stommel gyres) on the final state, so `current`,
+    // `current_speed` and `psi` exist for the ocean-current overlay. Uses the last season's wind. No simulation code changed; if a stage
+    // refuses (missing input), the world simply has no `current` and the overlay stays disabled.
+    let _ = ocean_current_diagnostic(&domain, &mut f);
     progress(1.0, "done");
     Ok(Solved { domain, fields: f, table })
+}
+
+/// Runs `wind_stress`, `wind_stress_curl`/`beta_term` and `ocean_currents` once over `f` (fields: wind, ice_fraction, coriolis_f, elevation).
+pub fn ocean_current_diagnostic(domain: &Domain, f: &mut FieldStore) -> enbuilder::Result<()> {
+    let mut s = Scheduler::new();
+    enbuilder::add_ocean_stage(&mut s)?;
+    enbuilder::add_gyre_forcing_stage(&mut s)?;
+    enbuilder::add_ocean_currents_stage(&mut s)?;
+    s.run(domain, f, &enbuilder::DirtyRegion::All)?;
+    Ok(())
 }

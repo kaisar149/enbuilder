@@ -166,3 +166,47 @@ Real-renderer colour parity: 360/360 sampled cells equal the 2D colour (sphere, 
 
 ## Demo script
 Start wb-server and the UI, Solve, click "3D world", drag to orbit, wheel to zoom, double-click a cell to centre it, raise Relief exaggeration, switch Lighting to Sun, hover a cell for temperature and rainfall, click "2D map" and see the same layer and selection.
+
+
+# Part 9e additions: vector overlays, layer stack, cell inspector
+
+## Layer kinds (data, in the schema: `layer_kinds`)
+`scalar` (the base layer, colormap), plus overlays declared in `schema.overlays`:
+`{ id, label, kind, token, field?, source?, weight_field?, threshold?, mode?, animated? }`
+- `vector`: reads `field` (3 layers = x, y, z in mesh space). Arrow glyphs, length by magnitude (relative to the 95th percentile), thinned by zoom; optional animated streaks when `animated`.
+- `lines`: `source` names a core geometry query (`rivers`); `weight_field` (`discharge`) scales line width (log scale against the largest river).
+- `mask`: cells with `field > threshold`; `mode` = `fill` (triangles of the cells, e.g. lakes) or `outline` (core query `get_outline`, e.g. coast, glaciers).
+Declared overlays: wind, currents, rivers, lakes, coast, glaciers. `token` -> theme colour `--overlay-<token>`. Viewers know kinds, never field names.
+
+## Geometry queries (in wb-app, topology only: cell ids, no coordinates)
+- `get_rivers`: header `{mesh_id, kind:"rivers", version, stale, n_lines, n_points, layout}`; binary `offsets` u32 (n_lines+1), `cells` u32, `discharge` f32 per vertex. Line k = `cells[offsets[k]..offsets[k+1]]`; consecutive vertices are neighbours; lines start at sources/confluences and end where the water goes. Error `not_solved` before a solve.
+- `get_outline {field, threshold=0.5}`: header `{mesh_id, field, threshold, version, stale, n_edges}`; binary `pairs` u32 (inside cell, outside neighbour). Works for any scalar/mask field.
+- `get_cell` now also returns `seasonal` (12 values for temperature, precipitation, soil moisture).
+- Each viewport turns cell ids into its own space (`overlays/geometry.ts` mesh space, `viewport/overlay2d.ts` map space via `makeForward`, `viewport/overlay3d.ts` for the globe/cube).
+
+## Layer stack model (`layers/stack.ts`, UI-only, never sent to the core)
+`LayerStack { entries[] (overlays, bottom to top), base {visible, opacity}, solo, preset }`; entry = `{ id, visible, opacity, blend: normal|multiply|screen }`. The scalar base is always drawn first and cannot be reordered, so overlays (rivers) always draw above elevation. Reordering (`moveTo`/`moveBy`) changes order only. `stackFromPreset` builds a stack in one step; `matchesPreset` says whether it is still unmodified. `layers/items.ts` turns stack + fetched data into `OverlayItem[]`; `dataNeeds` says what the controller must fetch (only for drawn overlays).
+
+## Presets (data, `schema.layer_presets`)
+`{ id, name, description, base, overlays[] }`: terrain, climate, hydrology, ocean. One click applies base layer + overlay stack. Adding a preset in Rust adds a button.
+
+## Inspector format (`layers/inspector.ts`)
+`inspectorModel(schema, cellInfo, pinnedInfo?)` -> `{ title, subtitle (biome), stale, groups[{id,title,rows[]}], pinnedTitle }`. Group = first module in `produced_by` (pipeline order; unknown fields under "Other"). Row = `{ name, label, unit, raw, text, other?{raw,text,delta}, seasons?{raw[12],text[12],min,max} }`. `raw` is exactly the number `get_cell` returned; only the schema display scale/offset is applied for text. Nothing is recomputed. Pinning a cell adds a second column with the difference.
+
+## Client cache (wb-client store)
+`ensureRivers()`, `ensureOutline(field, threshold)`: fetched once, cached in `state.rivers` / `state.outlines`; concurrent calls share one request; dropped and refetched (only what is watched) on `field_changed` of their inputs or `world_loaded`.
+
+## Panels and controller
+Registry ids `stack` (LayerStackPanel: toggle, reorder, opacity, blend, solo, legend, presets, streak toggle) and `cell` (InspectorPanel). Controller: `stack`, `animate`, `applyPreset`, `updateStack`, `pinCell`. Viewport interface: `setOverlays(items, opts)`; StubViewport logs `overlayList`.
+
+## Fixes made on the way
+`pick(null)` no longer resets view/season; tooltip rows skip vector/mask fields and list curated fields first.
+
+## Tests
+wb-client `part9e.test.ts` (6, real server: schema data, connected rivers, cache without refetch, outline edges, refetch on change, seasons). ui-web `part9e.test.ts` (21, headless: stack, arrows vs field on plane/sphere/cube, thinning, rivers connected and above base, inspector = get_cell, pinned compare, particles). Rust `wb-app/tests/part9e.rs`. Totals now: wb-client 34, ui-web 79, wb-app 13+6+5+6.
+
+## NOT verified
+No browser/GPU check of the overlay drawing this session (only the pure geometry and stub paths are tested). Streak performance and the Hydrology/Climate demo on a real renderer still need a look: run the UI, Solve, click presets.
+
+## Demo script
+Start wb-server and the UI, Solve. Layer stack panel: click Hydrology (relief + rivers, lakes, coast), then Climate (rainfall + wind arrows; turn on animated streaks). Click a cell behind a mountain range: the Cell inspector lists every field by module with 12-season values. Press Pin, click a wet coastal cell, read the side-by-side difference.

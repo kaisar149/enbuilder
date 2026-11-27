@@ -5,6 +5,9 @@ import {
   type CellInfo, type FieldData, type LayerDecl, type WbState,
 } from 'wb-client';
 import { RELIEF_FIELD, initialView3D, type View3DState } from '../viewport/view3d';
+import { dataNeeds, overlayAvailable, buildOverlayItems } from '../layers/items';
+import { emptyStack, isDrawn, stackFromPreset, type LayerStack } from '../layers/stack';
+import type { OverlayItem } from '../viewport/types';
 import type { BenchResult } from '../viewport/bench';
 
 export interface UiState {
@@ -29,9 +32,18 @@ export interface UiState {
   /** Counters the viewport host watches: a request to reset the camera / to run the benchmark. */
   resetNonce: number;
   benchNonce: number;
+  /** Part 9e. Overlay stack (order, visibility, opacity, blend, solo). UI-only: it never goes to the core. */
+  stack: LayerStack;
+  /** Animated streaks for the vector overlays that allow them. */
+  animate: boolean;
+  /** Base layer a preset asked for that is not available yet (it is selected as soon as a solve provides it). */
+  pendingBase: string | null;
+  /** Second cell kept for comparison in the inspector. */
+  pinnedCell: number | null;
+  pinnedInfo: CellInfo | null;
 }
 
-export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0 });
+export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0, stack: emptyStack(null), animate: false, pendingBase: null, pinnedCell: null, pinnedInfo: null });
 
 export class MapController {
   readonly ui = new Store<UiState>(initialUi());
@@ -39,6 +51,8 @@ export class MapController {
   readonly params: ParamController;
   private unsub: () => void;
   private shownSeasonKey: string | null = null;
+  private stackReady = false;
+  private overlayFields = new Set<string>();
   private tipVersion = '';
 
   constructor(readonly app: WbApp) {
@@ -57,7 +71,21 @@ export class MapController {
     const s = this.app.store.getState();
     if (!s.schema || !s.world) return;
     const ver = `${s.world.domain.mesh_id}:${s.world.fields.map((f) => f.version).join(',')}`;
-    if (ver !== this.tipVersion) { this.tipVersion = ver; this.tipCache.clear(); }
+    if (ver !== this.tipVersion) {
+      const first = this.tipVersion === '';
+      this.tipVersion = ver; this.tipCache.clear();
+      // the inspector shows what the core says NOW: after a re-solve or a new world, ask again for the picked and the pinned cell
+      if (!first) void this.refreshCells();
+    }
+    if (!this.stackReady) {
+      // the first stack is the Terrain preset (coastline and glaciers over relief); the user switches with one click
+      this.stackReady = true;
+      const first = s.schema.layer_presets?.[0]?.id;
+      if (first) this.ui.setState({ stack: stackFromPreset(s.schema, first) });
+    }
+    const pb = this.ui.getState().pendingBase;
+    if (pb && s.world.fields.some((f) => f.name === pb)) { this.ui.setState({ pendingBase: null }); void this.selectLayer(pb); }
+    this.syncOverlays();
     const choices = layerChoices(s.schema, s.world);
     const current = this.ui.getState().layer;
     const stillOk = current && choices.some((c) => c.field === current && c.available);
@@ -79,6 +107,64 @@ export class MapController {
     if (variant) void this.app.ensureField(variant, season!).catch(() => undefined);
     // relief needs the height field, only while the 3D view is on
     if (this.ui.getState().view === '3d' && s.world.solved) void this.app.ensureField(RELIEF_FIELD).catch(() => undefined);
+  }
+
+  /** Fetches the data the drawn overlays need (and only that): fields once per version, rivers and outlines once per change. Never sends a command. */
+  private syncOverlays(): void {
+    const s = this.app.store.getState();
+    if (!s.schema || !s.world) return;
+    const needs = dataNeeds(this.ui.getState().stack, s.schema, (f) => this.app.isAvailable(f));
+    const want = new Set<string>();
+    for (const f of needs.fields) { want.add(fieldKey(f.name, f.layer)); void this.app.ensureField(f.name, f.layer).catch(() => undefined); }
+    for (const key of this.overlayFields) {
+      if (want.has(key)) continue;
+      const [n, l] = key.split('#');
+      if (this.ui.getState().layer !== n) this.app.unwatch(n, Number(l));
+    }
+    this.overlayFields = want;
+    if (needs.rivers) void this.app.ensureRivers().catch(() => undefined);
+    for (const o of needs.outlines) void this.app.ensureOutline(o.field, o.threshold).catch(() => undefined);
+  }
+
+  /** Part 9e: change the stack (reorder, visibility, opacity, blend, solo). A pure state change: the data stays as it is. */
+  updateStack(f: (s: LayerStack) => LayerStack): void {
+    this.ui.setState({ stack: f(this.ui.getState().stack) });
+    this.syncOverlays();
+  }
+
+  /** One click: the preset's overlay stack and its base layer (selected now, or as soon as a solve makes it available). */
+  applyPreset(id: string): void {
+    const schema = this.app.store.getState().schema;
+    const p = schema?.layer_presets?.find((x) => x.id === id);
+    if (!schema || !p) return;
+    this.ui.setState({ stack: stackFromPreset(schema, id), pendingBase: null });
+    const choice = layerChoices(schema, this.app.store.getState().world).find((c) => c.field === p.base);
+    if (choice?.available) void this.selectLayer(p.base);
+    else this.ui.setState({ pendingBase: p.base });
+    this.syncOverlays();
+  }
+
+  setAnimate(on: boolean): void { this.ui.setState({ animate: on }); }
+
+  /** Overlays for the viewport, from the current stack and the fetched data. */
+  overlayItems(resolveColor: (token: string) => string): OverlayItem[] {
+    return buildOverlayItems(this.app.store.getState(), this.app.store.getState().schema, this.ui.getState().stack, resolveColor);
+  }
+
+  private async refreshCells(): Promise<void> {
+    const { pickedCell, pinnedCell } = this.ui.getState();
+    if (pickedCell !== null) void this.pick(pickedCell);
+    if (pinnedCell !== null) void this.pinCell(pinnedCell);
+  }
+
+  /** Keeps the clicked cell as the second column of the inspector (one `get_cell` query, same as a click). */
+  async pinCell(cell: number | null): Promise<void> {
+    if (cell === null) { this.ui.setState({ pinnedCell: null, pinnedInfo: null }); return; }
+    this.ui.setState({ pinnedCell: cell });
+    try {
+      const info = await this.app.client.getCell(cell);
+      if (this.ui.getState().pinnedCell === cell) this.ui.setState({ pinnedInfo: info });
+    } catch { this.ui.setState({ pinnedCell: null, pinnedInfo: null }); }
   }
 
   /** 2D / 3D switch. Nothing else changes: layer, season, picked cell and legend are the same store values both viewports read. */
@@ -142,7 +228,7 @@ export class MapController {
 
   /** Click on the map: read-only `get_cell` query for the inspector. */
   async pick(cell: number | null): Promise<void> {
-    if (cell === null) { this.ui.setState({ pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0 }); return; }
+    if (cell === null) { this.ui.setState({ pickedCell: null, cellInfo: null, cellError: null }); return; }
     this.ui.setState({ pickedCell: cell, cellError: null });
     try {
       const info = await this.app.client.getCell(cell);
@@ -163,6 +249,7 @@ export function viewLayers(app: WbState, ui: UiState): { layers: LayerDecl[]; fi
     // until the season layer arrives the map keeps showing the previous values; the colour range and palette stay those of the base field
     if (twin) f = { ...twin, name: ui.layer, meta: f.meta };
   }
-  const decl = layerDecl(app.schema, f);
+  // the base layer's visibility and opacity come from the layer stack; hidden = fully transparent (the viewport keeps its own background)
+  const decl = layerDecl(app.schema, f, isDrawn(ui.stack, 'base') ? ui.stack.base.opacity : 0);
   return { layers: [decl], fields: { [decl.id]: f } };
 }
