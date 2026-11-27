@@ -11,6 +11,8 @@ export interface PanelDef {
 
 export const PANEL_REGISTRY: PanelDef[] = [
   { id: 'solve', title: 'Solve', component: 'SolvePanel', default_dock: 'left' },
+  { id: 'tools', title: 'Paint tools', component: 'ToolsPanel', default_dock: 'left' },
+  { id: 'realism', title: 'Realism', component: 'RealismPanel', default_dock: 'left' },
   { id: 'layers', title: 'Map layer', component: 'LayersPanel', default_dock: 'left' },
   { id: 'stack', title: 'Layer stack', component: 'LayerStackPanel', default_dock: 'left' },
   { id: 'view3d', title: 'View', component: 'View3DPanel', default_dock: 'left' },

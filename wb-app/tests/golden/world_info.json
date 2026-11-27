@@ -8,8 +8,32 @@
     "n_cells": 642,
     "total_area_m2": 510064471909789.0
   },
+  "edit": {
+    "generation": 0,
+    "last_refresh": null,
+    "locks": {
+      "biome": 0,
+      "elevation": 0,
+      "precipitation": 0,
+      "temperature": 0
+    },
+    "paint": {
+      "biome_override": 0,
+      "elevation": 0,
+      "rainfall_bias": 0,
+      "temperature_bias": 0
+    },
+    "quality": null,
+    "realism": {
+      "biome": 0.0,
+      "elevation": 0.0,
+      "precipitation": 0.0,
+      "temperature": 0.0
+    }
+  },
   "fields": [
     {
+      "hash": "ea9b45db1765c8e2",
       "layers": 1,
       "name": "elevation",
       "stale": false,

@@ -210,3 +210,48 @@ No browser/GPU check of the overlay drawing this session (only the pure geometry
 
 ## Demo script
 Start wb-server and the UI, Solve. Layer stack panel: click Hydrology (relief + rivers, lakes, coast), then Climate (rainfall + wind arrows; turn on animated streaks). Click a cell behind a mountain range: the Cell inspector lists every field by module with 12-season values. Press Pin, click a wet coastal cell, read the side-by-side difference.
+
+# Part 9f additions: paint tools, locks, realism slider, preview modes
+
+## Tool interface (`wb-client/src/tools.ts`, framework-free)
+`Tool { id, label, cursor, def, onPick(ctx, cell), onDrag(ctx, cell), onRelease(ctx) -> Command | null }`. A tool never sees the viewport: the viewport turns the pointer into a cell (`pick`), the `EditController` (`wb-client/src/edit.ts`) feeds it to the active tool. `ToolContext = { mesh, geom, brush, stroke, changed() }`. `ToolRegistry.fromSchema(schema.edit)` builds every tool from data (`paintTool(def)` for paint and erase, `lockTool(def)` for lock and unlock), so a tool added in Rust appears with no client code; `register()` accepts custom tools.
+- Brush: `BrushSettings { radiusKm, strength, falloff, amount, biome, lockField, eraseLayer }`. Falloffs `smooth` (smoothstep), `linear`, `constant`, `sharp` (square of linear). The brush region is found by walking the mesh adjacency from the picked cell while the surface distance is within the radius (great-circle on spheres), so it works on any mesh. Fast drags are filled with `cellPath` (greedy adjacency walk); dabs are spaced at 25% of the radius.
+- Stroke = weight-max union of dabs (the same rule the core applies). It is sent ONCE on pointer up: one `paint_stroke` (or `set_lock`) command, one undo step. While dragging only the local preview changes.
+- Additive tools (`raise`, `lower`, `warm`, `cool`, `wetter`, `drier`): the client multiplies weights by brush strength and sends `value = sign * amount`; set / smooth / flatten / erase send `strength`. Lock tools lock every cell the brush touched.
+- `EditController`: `setTool`, `setBrush`, `pointerDown/Move/Up`, `cancelStroke`, `setRealism`, `undo`, `redo`, `idle()`. State `{ toolId, brush, phase, preview, strokesCommitted, lastDetail, lastChain, error }`, `phase` = idle, stroking, committing, previewing, refining, error.
+- Viewport additions (additive): `setToolMode(on)` and `onStroke(listener)` with `StrokeEvent { phase: down|move|up|cancel, cell, x, y }`. In tool mode the left button draws; right button, middle button and shift-drag still navigate. Moves are reported once per new cell. 2D and 3D bases both implement it; `StubViewport` inherits it.
+- What tools draw is made of ordinary overlay items (`ui-web/src/tools/overlays.ts`): brush ring = outline mask of the cells the brush will touch (truthful to what gets painted), stroke preview = fill mask with the weights, lock hatch = fill mask with `pattern: 'hatch'` (new optional style field; 2D draws diagonal stripes, 3D draws a translucent fill). Theme tokens `--overlay-brush`, `--overlay-stroke`, `--overlay-lock`.
+
+## Paint-layer format (wb-app `paint.rs`)
+Per layer: `value[n]` and `mask[n]` (coverage 0..1), stored separately from computed fields, per mesh id (undoing a mesh change brings that mesh's paint back). Layers: `elevation` (absolute m, clamp -12000..12000), `temperature_bias` (K delta, +-60), `rainfall_bias` (fractional delta of precipitation, -1..5), `biome_override` (biome id). Strokes always edit the r = 0 painted view, independent of the slider. Query `get_paint {layer}` answers a binary frame: `value` then `mask`, f32 little-endian, layout table in the header (`painted_cells`, `generation`). `get_locks` answers one u32 array per output field (ascending cell ids). Stroke ops: `add` (view += value * w), `set`, `smooth`, `flatten`, `erase` (mask *= 1 - w * strength); the biome layer allows only `set` and `erase`. A stroke over locked cells skips them and reports `detail.skipped_locked`.
+
+## Blend rule (per output field, `r = realism / 100`)
+`effective = computed + (1 - r) * mask * (painted - computed)`. For bias layers `painted - computed` is the bias: temperature + (1 - r) * mask * bias; precipitation * (1 + (1 - r) * mask * bias), never below 0. Biome: the painted id wins where `(1 - r) * mask >= 0.5`. r = 0 gives the painted values as given, r = 1 ignores the paint, in between is linear. Locked cells show their locked value whatever the blend says. Realism changes are instant (the derived view is rebuilt, nothing is re-solved). Default realism 0, so paint is visible at once. `get_field_view {name, view}`: `blended` (default, = `get_field`), `computed` (physics only), `painted` (r = 0, locks applied).
+
+## Locks
+Lockable output fields: elevation, temperature, precipitation, biome. Elevation and temperature locks are pinned inside the solver (boundary conditions); precipitation and biome locks hold the published value. Locking captures the current value.
+
+## Preview-mode thresholds (command `refresh {mode}`, background job, `job.mode` in world_info)
+- `preview`: warm start from the last solve, seasons 3 and 9 only (the second is skipped when the first took more than 60 ms), other seasons extrapolated by the mean delta, biomes reclassified, no ocean-current diagnostic. Target under 100 ms. Measured at resolution 3 (642 cells): 64 ms.
+- `refined`: warm start, all 12 seasons once. Target 1 to 5 s. Measured 356 ms at 642 cells. Preview vs refined: temperature MAE 0.28 K (max 1.7 K), precipitation MAE 5.4 % of the mean. Refined vs full: temperature MAE 0.004 K.
+- `full`: the existing `solve`, now honouring paint and locks.
+A new refresh supersedes a running refresh; strokes, locks and realism changes cancel any running refresh; a running solve or variations job answers `job_running`. `world_info.edit.quality` says which result the fields come from (`preview`, `refined`, `full`); `edit.last_refresh = { mode, seasons_run, ms }`.
+Client chain (`EditController.pointerUp`): after a commit that changes solver inputs (elevation strokes, elevation and temperature locks) on a solved world, run `preview`, then `refined`; a new stroke abandons the chain. Bias, biome and realism edits only re-blend. The Refresh badge (map toolbar) shows "Refining: quick preview", "Refining: refined pass", then "Refined" or "Preview quality".
+
+## History
+One stack for parameters, strokes, locks and realism: history entries carry `kind` (`params`, `stroke`, `lock`, `realism`) plus `layer` / `field` / `cells`. A stroke undo restores the exact solved state (an `Arc` snapshot swaps). Deviation from the brief: "field versions equal" after undo is implemented as content-hash equality, because versions stay monotonic for client caches.
+
+## API additions (api_version stays 1, additive)
+Commands `paint_stroke`, `set_lock`, `set_realism`, `refresh`. Queries `get_field_view`, `get_paint`, `get_locks`. `Ack.detail`. `world_info.edit`, `field.hash`, `job.mode`. `get_cell.edit_state`. `schema.edit` (tools, brush limits and falloffs, layers, lockable, realism, refresh_modes). Goldens regenerated (`world_info`, `schema`). No simulation crate code changed except read-only hooks and locks as boundary conditions.
+
+## Panels and controller
+Registry ids `tools` (ToolsPanel), `realism` (RealismPanel); `RefreshBadge` in the map toolbar; `history` shows kinds. Controller: `edit`, `ui.editOn`, `ui.fieldView`, `setEditMode`, `handleStroke`, `setFieldView`. No output field name appears in `ui-web/src` (the static guard enforces it); names come from `schema.edit`.
+
+## Tests
+Rust `wb-app/tests/part9f.rs` (11). wb-client `part9f.test.ts` (12, real server: registry from schema, one command per drag, undo restores the exact elevation, locks skip, realism 0 / 50 / 100, caches). ui-web `part9f_tools.test.ts` (11), `part9f_stroke3d.test.ts` (4), `part9f_ui.test.tsx` (8, the demo script on a real server). Totals: wb-client 46, ui-web 102.
+
+## NOT verified
+No real browser or GPU run (jsdom and the stub renderer only); hatch is not drawn in 3D. Dragging was measured only through the headless path, not frame times. The client decides which edits need a refresh chain (elevation strokes, elevation and temperature locks); the schema does not declare it yet. Precipitation bias is a view on top of the solved rainfall, so it does not feed back into rivers or biomes beyond the biome blend.
+
+## Demo script
+Start wb-server and the UI, Solve. Open Paint tools, press Paint on the map, choose Raise, set the radius to about 900 km and drag a ridge across a westerly wind belt, then release. The badge says "Refining: quick preview", then "Refining: refined pass", then "Refined"; switch the map layer to Rainfall and the rain shadow shows behind the ridge. Choose Lock, set Field to Elevation, click a valley (hatched), choose Raise and paint over it: the panel reports the locked cells were left unchanged. Move the Elevation realism slider to 100 to see the physics only, back to 0 for your painting; use Undo in History to remove strokes.

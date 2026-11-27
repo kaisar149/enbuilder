@@ -11,7 +11,21 @@ export type Command =
   | { type: 'undo' }
   | { type: 'redo' }
   /** Part 9c: background job solving `count` alternative seeds (coarse = one year of spin-up). Changes no parameter. */
-  | { type: 'variations'; count: number; coarse?: boolean };
+  | { type: 'variations'; count: number; coarse?: boolean }
+  /** Part 9f: one brush stroke on a paint layer (weights in [0,1] per cell; radius and falloff are applied by the client). One undo step. */
+  | { type: 'paint_stroke'; layer: PaintLayerId; op: PaintOp; cells: number[]; weights: number[]; value?: number | null; strength?: number }
+  /** Part 9f: lock (at the current value) or unlock cells of an output field. */
+  | { type: 'set_lock'; field: OutputField; cells: number[]; locked: boolean }
+  /** Part 9f: realism 0..100 for one output field or `all`. Instant (re-blend, no solve). */
+  | { type: 'set_realism'; field: OutputField | 'all'; value: number }
+  /** Part 9f: background re-solve after edits. */
+  | { type: 'refresh'; mode: RefreshMode };
+
+export type OutputField = 'elevation' | 'temperature' | 'precipitation' | 'biome';
+export type PaintLayerId = 'elevation' | 'temperature_bias' | 'rainfall_bias' | 'biome_override';
+export type PaintOp = 'add' | 'set' | 'smooth' | 'flatten' | 'erase';
+export type RefreshMode = 'preview' | 'refined' | 'full';
+export type FieldViewName = 'blended' | 'computed' | 'painted';
 
 export type Query =
   | { type: 'get_schema' }
@@ -24,15 +38,21 @@ export type Query =
   /** Part 9e: edges between cells with `field > threshold` and their neighbours outside (any field). */
   | { type: 'get_outline'; field: string; threshold?: number }
   | { type: 'get_variations' }
-  | { type: 'get_variation'; index: number; name: string };
+  | { type: 'get_variation'; index: number; name: string }
+  /** Part 9f */
+  | { type: 'get_field_view'; name: string; layer?: number; view?: FieldViewName }
+  | { type: 'get_paint'; layer: PaintLayerId }
+  | { type: 'get_locks' };
 
 export interface Ack {
   api_version: number;
   command: string;
   /** Solved fields that are now stale. */
   invalidated: string[];
-  /** Set by `solve`. */
+  /** Set by `solve` and `refresh`. */
   job: number | null;
+  /** Part 9f: `paint_stroke` -> { applied, skipped_locked }; `set_lock` -> detail of the lock change. */
+  detail?: { applied?: number; skipped_locked?: number; [k: string]: unknown };
 }
 
 export type JobStatus = 'completed' | 'cancelled' | 'failed';
@@ -122,6 +142,8 @@ export interface Schema {
   overlays?: OverlayDef[];
   layer_presets?: LayerPresetDef[];
   layer_kinds?: string[];
+  /** Part 9f */
+  edit?: EditSchema;
 }
 
 export type OverlayKind = 'vector' | 'lines' | 'mask';
@@ -165,7 +187,9 @@ export interface WorldInfo {
   solved: boolean;
   stale: boolean;
   fields: { name: string; layers: number; version: number; stale: boolean }[];
-  job: { id: number; running: boolean } | null;
+  job: { id: number; running: boolean; /** Part 9f */ mode?: 'full' | 'preview' | 'refined' | 'variations' } | null;
+  /** Part 9f */
+  edit?: EditInfo;
   can_undo: boolean;
   can_redo: boolean;
   /** Part 9c. `undo` is oldest first; `redo` lists the next step to re-apply first. */
@@ -176,6 +200,66 @@ export interface HistoryEntry {
   label: string;
   preset: string;
   changes: { name: string; old: number; new: number }[];
+  /** Part 9f: what kind of step this is (absent in old servers = params). */
+  kind?: 'params' | 'stroke' | 'lock' | 'realism';
+  layer?: string;
+  field?: string;
+  cells?: number;
+}
+
+/** Part 9f: the `edit` block of world_info. */
+export interface EditInfo {
+  /** Bumps on every paint, lock or realism change; caches of paint and lock data are keyed by it. */
+  generation: number;
+  realism: Record<OutputField, number>;
+  locks: Record<OutputField, number>;
+  paint: Record<PaintLayerId, number>;
+  /** Quality of the solved state the fields come from (null = never solved). */
+  quality: 'preview' | 'refined' | 'full' | null;
+  last_refresh: { mode: RefreshMode; seasons_run: number; ms: number } | null;
+}
+
+/** Part 9f: paint layer (value + coverage mask, f32 per cell). */
+export interface PaintData {
+  meshId: string;
+  layer: PaintLayerId;
+  output: OutputField;
+  generation: number;
+  paintedCells: number;
+  value: Float32Array;
+  mask: Float32Array;
+}
+
+/** Part 9f: locked cell ids per output field (ascending). */
+export interface LocksData {
+  meshId: string;
+  generation: number;
+  cells: Record<OutputField, Uint32Array>;
+}
+
+/** Part 9f: `schema.edit`, everything the tool panel needs (tools, brush limits, realism, refresh modes) as data. */
+export interface ToolDef {
+  id: string;
+  label: string;
+  hint: string;
+  kind: 'paint' | 'erase' | 'lock';
+  layer?: PaintLayerId | 'any';
+  op?: PaintOp;
+  sign?: 1 | -1;
+  needs_value?: boolean;
+  value_from?: 'biomes';
+  needs_field?: boolean;
+  locked?: boolean;
+  amount?: { default: number; min: number; max: number; unit: string } | null;
+}
+
+export interface EditSchema {
+  tools: ToolDef[];
+  brush: { radius_min_km: number; radius_max_km: number; radius_default_km: number; strength_default: number; falloffs: string[]; falloff_default: string };
+  layers: { id: PaintLayerId; label: string; output: OutputField; unit: string; min: number; max: number | null }[];
+  lockable: OutputField[];
+  realism: { fields: OutputField[]; min: number; max: number; default: number };
+  refresh_modes: { id: RefreshMode; label: string; description: string; target_ms?: number; target_ms_max?: number }[];
 }
 
 export interface VariationsInfo {
@@ -251,6 +335,8 @@ export interface CellInfo {
   lon_deg?: number;
   /** Part 9e: twelve season values per seasonal field (temperature, precipitation, soil_moisture); only after a solve. */
   seasonal?: Record<string, number[]>;
+  /** Part 9f: per output field, how much of this value is painted (mask), whether it is locked, and the realism. */
+  edit_state?: Record<OutputField, { painted: number; locked: boolean; realism: number }>;
 }
 
 /** River polylines (topology only). Line k is `cells[offsets[k] .. offsets[k+1]]`; `discharge` is per vertex (m3/s). */

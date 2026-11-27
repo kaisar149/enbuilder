@@ -113,6 +113,41 @@ pub fn layer_presets_json() -> Value {
     ])
 }
 
+/// Part 9f: paint tools, realism, locks and refresh modes, as data. The client builds its Tools panel from this and hard-codes no tool.
+/// A tool paints `layer` with `op`; `amount_unit` and the default / max amounts are in the layer's units (metres, K, fraction).
+pub fn edit_json() -> Value {
+    json!({
+        "layers": [
+            { "id": "elevation", "output": "elevation", "label": "Elevation", "unit": "m", "min": -12000.0, "max": 12000.0 },
+            { "id": "temperature_bias", "output": "temperature", "label": "Temperature bias", "unit": "K", "min": -60.0, "max": 60.0 },
+            { "id": "rainfall_bias", "output": "precipitation", "label": "Rainfall bias", "unit": "fraction", "min": -1.0, "max": 5.0 },
+            { "id": "biome_override", "output": "biome", "label": "Biome override", "unit": "", "min": 0.0, "max": null },
+        ],
+        "tools": [
+            { "id": "raise", "label": "Raise", "kind": "paint", "layer": "elevation", "op": "add", "sign": 1, "amount": { "default": 400.0, "min": 20.0, "max": 3000.0, "unit": "m" }, "needs_value": false, "hint": "Raise terrain under the brush" },
+            { "id": "lower", "label": "Lower", "kind": "paint", "layer": "elevation", "op": "add", "sign": -1, "amount": { "default": 400.0, "min": 20.0, "max": 3000.0, "unit": "m" }, "needs_value": false, "hint": "Dig terrain (below sea level makes a lake or sea)" },
+            { "id": "smooth", "label": "Smooth", "kind": "paint", "layer": "elevation", "op": "smooth", "amount": null, "needs_value": false, "hint": "Blend each cell toward its neighbours" },
+            { "id": "flatten", "label": "Flatten", "kind": "paint", "layer": "elevation", "op": "flatten", "amount": null, "needs_value": false, "hint": "Pull the terrain toward the mean height under the brush" },
+            { "id": "warm", "label": "Warmer", "kind": "paint", "layer": "temperature_bias", "op": "add", "sign": 1, "amount": { "default": 4.0, "min": 0.5, "max": 30.0, "unit": "K" }, "needs_value": false, "hint": "Add a temperature bias" },
+            { "id": "cool", "label": "Cooler", "kind": "paint", "layer": "temperature_bias", "op": "add", "sign": -1, "amount": { "default": 4.0, "min": 0.5, "max": 30.0, "unit": "K" }, "needs_value": false, "hint": "Subtract a temperature bias" },
+            { "id": "wetter", "label": "Wetter", "kind": "paint", "layer": "rainfall_bias", "op": "add", "sign": 1, "amount": { "default": 0.3, "min": 0.05, "max": 2.0, "unit": "fraction" }, "needs_value": false, "hint": "Increase rainfall by a fraction" },
+            { "id": "drier", "label": "Drier", "kind": "paint", "layer": "rainfall_bias", "op": "add", "sign": -1, "amount": { "default": 0.3, "min": 0.05, "max": 1.0, "unit": "fraction" }, "needs_value": false, "hint": "Decrease rainfall by a fraction" },
+            { "id": "biome", "label": "Biome", "kind": "paint", "layer": "biome_override", "op": "set", "amount": null, "needs_value": true, "value_from": "biomes", "hint": "Override the biome" },
+            { "id": "eraser", "label": "Eraser", "kind": "erase", "layer": "any", "op": "erase", "amount": null, "needs_value": false, "hint": "Remove paint of the active layer, returning it to the physics" },
+            { "id": "lock", "label": "Lock", "kind": "lock", "locked": true, "needs_field": true, "hint": "Pin a field in a region; the solver treats it as a boundary condition" },
+            { "id": "unlock", "label": "Unlock", "kind": "lock", "locked": false, "needs_field": true, "hint": "Release locked cells" },
+        ],
+        "brush": { "radius_default_km": 800.0, "radius_min_km": 100.0, "radius_max_km": 5000.0, "strength_default": 0.6, "falloffs": ["smooth", "linear", "constant", "sharp"], "falloff_default": "smooth" },
+        "realism": { "fields": ["elevation", "temperature", "precipitation", "biome"], "default": 0.0, "min": 0.0, "max": 100.0 },
+        "lockable": ["elevation", "temperature", "precipitation", "biome"],
+        "refresh_modes": [
+            { "id": "preview", "label": "Preview", "target_ms": 100, "description": "Warm start, 1-2 representative seasons, the rest extrapolated" },
+            { "id": "refined", "label": "Refined", "target_ms_max": 5000, "description": "Warm start, all 12 seasons once" },
+            { "id": "full", "label": "Full solve", "description": "Complete spin-up from scratch, honouring paint and locks" },
+        ],
+    })
+}
+
 pub fn schema() -> crate::api::ApiResult<Value> {
     let s = schema_scheduler()?;
     let mut producers: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -152,6 +187,7 @@ pub fn schema() -> crate::api::ApiResult<Value> {
         "seasons": seasons_json(),
         "overlays": overlays_json(),
         "layer_presets": layer_presets_json(),
+        "edit": edit_json(),
         "presets": presets(),
         "modules": modules,
         "loops": loops,

@@ -152,7 +152,7 @@ export class OverlayPainter2D {
   }
 
   private drawFill(ctx: CanvasRenderingContext2D, it: Extract<OverlayItem, { kind: 'mask'; mode: 'fill' }>, v: MapView2D): void {
-    const bmp = this.cached(this.fills, `${it.id}|${it.threshold}|${it.color}`, it.values, () => this.fillBitmap(it));
+    const bmp = this.cached(this.fills, `${it.id}|${it.threshold}|${it.color}|${it.pattern ?? 'solid'}`, it.values, () => this.fillBitmap(it));
     if (!bmp) return;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(bmp, v.dx, v.dy, v.dw, v.dh);
@@ -170,7 +170,10 @@ export class OverlayPainter2D {
     const img = g.createImageData(width, height);
     for (let i = 0; i < this.pixelCells.length; i++) {
       const cell = this.pixelCells[i];
-      if (cell >= 0 && it.values[cell] > it.threshold) img.data[4 * i + 3] = 255;
+      if (cell < 0 || !(it.values[cell] > it.threshold)) continue;
+      // hatch (Part 9f, locked regions): diagonal stripes 3 px wide every 8 px; solid otherwise
+      if (it.pattern === 'hatch' && (((i % width) + Math.floor(i / width)) & 7) > 2) continue;
+      img.data[4 * i + 3] = 255;
     }
     g.putImageData(img, 0, 0);
     g.globalCompositeOperation = 'source-in';

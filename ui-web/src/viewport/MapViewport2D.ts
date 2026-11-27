@@ -5,7 +5,7 @@ import type { FieldData, LayerDecl, MeshData } from 'wb-client';
 import { buildPixelCells, makeProjection, type Projection } from './projections';
 import { paintPixels } from './raster';
 import { OverlayPainter2D } from './overlayPaint2d';
-import { HOME_CAMERA, isOrbit, type AnyCamera, type CameraState, type LayerContext, type OverlayItem, type OverlayOptions, type PickEvent, type Viewport } from './types';
+import { HOME_CAMERA, isOrbit, type AnyCamera, type CameraState, type LayerContext, type OverlayItem, type OverlayOptions, type PickEvent, type StrokeEvent, type Viewport } from './types';
 
 export interface MapViewportOptions {
   /** Raster width in pixels of the whole map (default 720, the same default as `wb-snap`). */
@@ -138,10 +138,14 @@ export class MapViewport2D implements Viewport {
     this.ro?.disconnect();
     this.cleanup.forEach((c) => c());
     this.canvas.remove();
-    this.pickL.clear(); this.hoverL.clear(); this.camL.clear();
+    this.pickL.clear(); this.hoverL.clear(); this.camL.clear(); this.strokeL.clear();
   }
 
   onPick(l: Listener<PickEvent>) { this.pickL.add(l); return () => this.pickL.delete(l); }
+  private strokeL = new Set<Listener<StrokeEvent>>();
+  private toolMode = false;
+  onStroke(l: Listener<StrokeEvent>) { this.strokeL.add(l); return () => this.strokeL.delete(l); }
+  setToolMode(on: boolean): void { this.toolMode = on; this.canvas.style.cursor = on ? 'crosshair' : 'grab'; }
   onHover(l: Listener<PickEvent>) { this.hoverL.add(l); return () => this.hoverL.delete(l); }
   onCameraChange(l: Listener<AnyCamera>) { this.camL.add(l); return () => this.camL.delete(l); }
 
@@ -209,14 +213,28 @@ export class MapViewport2D implements Viewport {
     };
     let drag: { x: number; y: number; cx: number; cy: number; moved: boolean; id: number } | null = null;
 
+    let stroke: { id: number; last: number } | null = null;
+    const emitStroke = (phase: StrokeEvent['phase'], cell: number | null, p: { x: number; y: number }) => this.strokeL.forEach((l) => l({ phase, cell, ...p }));
     const down = (e: PointerEvent) => {
       const p = local(e);
+      if (this.toolMode && e.button === 0 && !e.shiftKey) {
+        const cell = this.pick(p.x, p.y);
+        if (cell === null) return;
+        stroke = { id: e.pointerId, last: cell };
+        c.setPointerCapture?.(e.pointerId);
+        emitStroke('down', cell, p);
+        return;
+      }
       drag = { x: p.x, y: p.y, cx: this.camera.x, cy: this.camera.y, moved: false, id: e.pointerId };
       c.setPointerCapture?.(e.pointerId);
       c.style.cursor = 'grabbing';
     };
     const move = (e: PointerEvent) => {
       const p = local(e);
+      if (stroke && stroke.id === e.pointerId) {
+        const cell = this.pick(p.x, p.y);
+        if (cell !== null && cell !== stroke.last) { stroke.last = cell; emitStroke('move', cell, p); }
+      }
       if (drag && drag.id === e.pointerId) {
         const dxp = p.x - drag.x, dyp = p.y - drag.y;
         if (Math.abs(dxp) + Math.abs(dyp) > 3) drag.moved = true;
@@ -234,6 +252,7 @@ export class MapViewport2D implements Viewport {
     };
     const up = (e: PointerEvent) => {
       const p = local(e);
+      if (stroke && stroke.id === e.pointerId) { stroke = null; emitStroke('up', this.pick(p.x, p.y), p); return; }
       if (drag && !drag.moved) this.pickL.forEach((l) => l({ cell: this.pick(p.x, p.y), ...p }));
       drag = null;
       c.style.cursor = 'grab';
@@ -276,7 +295,7 @@ export class MapViewport2D implements Viewport {
     on('pointerdown', down);
     on('pointermove', move);
     on('pointerup', up);
-    on('pointercancel', () => { drag = null; });
+    on('pointercancel', () => { drag = null; if (stroke) { stroke = null; emitStroke('cancel', null, { x: -1, y: -1 }); } });
     on('pointerleave', leave);
     on('wheel', wheel, { passive: false });
     on('dblclick', dbl);

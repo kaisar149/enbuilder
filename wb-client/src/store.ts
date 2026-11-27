@@ -1,7 +1,7 @@
 // A tiny observable store plus `WbApp`, the controller that keeps the store in sync with the server (commands -> queries -> events).
 // UI-only state (camera, open panels, theme, which layer is shown) is NOT here; it lives in the UI package.
 import { WbClient, type ConnectOptions } from './client';
-import type { Ack, Command, FieldData, JobStatus, MeshData, OutlineData, RiversData, Schema, VariationField, VariationsInfo, WbEvent, WorldInfo } from './types';
+import type { Ack, Command, FieldData, FieldViewName, JobStatus, LocksData, MeshData, OutlineData, PaintData, PaintLayerId, RefreshMode, RiversData, Schema, VariationField, VariationsInfo, WbEvent, WorldInfo } from './types';
 
 export class Store<S> {
   private listeners = new Set<() => void>();
@@ -25,7 +25,9 @@ export interface JobState {
   stage: string;
   status: 'running' | JobStatus;
   /** What the job is doing (known for jobs this client started). */
-  kind?: 'solve' | 'variations';
+  kind?: 'solve' | 'variations' | 'refresh';
+  /** Part 9f: for `refresh` jobs, which mode runs (the UI shows it as a badge). */
+  mode?: RefreshMode;
 }
 
 export interface WbState {
@@ -45,15 +47,22 @@ export interface WbState {
   rivers: RiversData | null;
   /** Part 9e: outlines, key = `field@threshold`. */
   outlines: Record<string, OutlineData>;
+  /** Part 9f: paint layers by id (valid while `generation` equals `world.edit.generation`). */
+  paint: Partial<Record<PaintLayerId, PaintData>>;
+  /** Part 9f: locked cells per output field. */
+  locks: LocksData | null;
+  /** Part 9f: fetched non-default field views, key = `name@view`. */
+  fieldViews: Record<string, FieldData>;
 }
 
 export const fieldKey = (name: string, layer = 0) => `${name}#${layer}`;
+export const viewKey = (name: string, view: FieldViewName) => `${name}@${view}`;
 export const outlineKey = (field: string, threshold = 0.5) => `${field}@${threshold}`;
 /** Fields the river polylines are built from: when one of them changes the cached polylines are dropped. */
 const RIVER_INPUTS = ['flow_dir', 'river_mask', 'discharge'];
 
 export function initialState(): WbState {
-  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null, variations: null, variationFields: {}, rivers: null, outlines: {} };
+  return { connection: 'connecting', schema: null, world: null, mesh: null, fields: {}, jobs: { current: null }, lastError: null, variations: null, variationFields: {}, rivers: null, outlines: {}, paint: {}, locks: null, fieldViews: {} };
 }
 
 export class WbApp {
@@ -65,6 +74,10 @@ export class WbApp {
   /** Geometry somebody asked for (`rivers`, `outline:<key>`); refetched when its inputs change. */
   private watchedGeom = new Set<string>();
   private variationJobs = new Set<number>();
+  private refreshJobs = new Map<number, RefreshMode>();
+  private watchedViews = new Set<string>();
+  private watchPaint = new Set<PaintLayerId>();
+  private watchLocks = false;
   private doneJobs = new Map<number, JobStatus>();
   private jobWaiters = new Map<number, ((s: JobStatus) => void)[]>();
   private unsub: (() => void)[] = [];
@@ -98,13 +111,17 @@ export class WbApp {
   async command(cmd: Command, opts: { quiet?: boolean } = {}): Promise<Ack> {
     try {
       const ack = await this.client.command(cmd);
-      if ((cmd.type === 'solve' || cmd.type === 'variations') && ack.job != null) {
-        const kind = cmd.type === 'solve' ? 'solve' : 'variations';
+      if ((cmd.type === 'solve' || cmd.type === 'variations' || cmd.type === 'refresh') && ack.job != null) {
+        const kind = cmd.type === 'refresh' ? 'refresh' : cmd.type === 'solve' ? 'solve' : 'variations';
         if (kind === 'variations') this.variationJobs.add(ack.job);
-        this.store.setState({ jobs: { current: { id: ack.job, fraction: 0, stage: 'starting', status: 'running', kind } } });
+        const mode = cmd.type === 'refresh' ? cmd.mode : undefined;
+        if (cmd.type === 'refresh') this.refreshJobs.set(ack.job, cmd.mode);
+        this.store.setState({ jobs: { current: { id: ack.job, fraction: 0, stage: 'starting', status: 'running', kind, mode } } });
       }
       // undo/redo/load_preset/set_param change the parameters but may not produce an event when nothing was solved
-      if (cmd.type !== 'solve' && cmd.type !== 'cancel' && cmd.type !== 'variations') await this.refreshWorld();
+      if (cmd.type !== 'solve' && cmd.type !== 'cancel' && cmd.type !== 'variations' && cmd.type !== 'refresh') await this.refreshWorld();
+      // Part 9f: edits change what the watched paint, lock and view caches hold
+      if (cmd.type === 'paint_stroke' || cmd.type === 'set_lock' || cmd.type === 'set_realism' || cmd.type === 'undo' || cmd.type === 'redo') await this.refetchEditCaches();
       return ack;
     } catch (e) {
       if (!opts.quiet) this.store.setState({ lastError: (e as Error).message });
@@ -176,6 +193,64 @@ export class WbApp {
   }
 
   unwatch(name: string, layer = 0): void { this.watched.delete(fieldKey(name, layer)); }
+
+  private jobKind(job: number): { kind: 'solve' | 'variations' | 'refresh'; mode?: RefreshMode } {
+    if (this.variationJobs.has(job)) return { kind: 'variations' };
+    const m = this.refreshJobs.get(job);
+    return m ? { kind: 'refresh', mode: m } : { kind: 'solve' };
+  }
+
+  /** Part 9f: starts a background refresh (`preview`, `refined` or `full`) and resolves with the job's final status. A newer refresh or an edit cancels it (status `cancelled`). */
+  async refreshAndWait(mode: RefreshMode): Promise<JobStatus> {
+    const ack = await this.command({ type: 'refresh', mode });
+    return this.waitJob(ack.job as number);
+  }
+
+  // ---- edit data (Part 9f) ----------------------------------------------------------------------------------------------
+  /** A non-default view (`computed` / `painted`) of an output field. Cached by field version; refetched after edits while watched. */
+  async ensureFieldView(name: string, view: FieldViewName): Promise<FieldData> {
+    if (view === 'blended') return this.ensureField(name);
+    const key = viewKey(name, view);
+    this.watchedViews.add(key);
+    const f = await this.client.getFieldView(name, view);
+    this.store.setState((s) => ({ fieldViews: { ...s.fieldViews, [key]: f } }));
+    return f;
+  }
+
+  /** A paint layer, fetched once per edit generation. */
+  async ensurePaint(layer: PaintLayerId): Promise<PaintData> {
+    this.watchPaint.add(layer);
+    const gen = this.store.getState().world?.edit?.generation;
+    const cached = this.store.getState().paint[layer];
+    if (cached && cached.generation === gen) return cached;
+    const p = await this.client.getPaint(layer);
+    this.store.setState((s) => ({ paint: { ...s.paint, [layer]: p } }));
+    return p;
+  }
+
+  /** Locked cells of every output field, fetched once per edit generation. */
+  async ensureLocks(): Promise<LocksData> {
+    this.watchLocks = true;
+    const gen = this.store.getState().world?.edit?.generation;
+    const cached = this.store.getState().locks;
+    if (cached && cached.generation === gen) return cached;
+    const l = await this.client.getLocks();
+    this.store.setState({ locks: l });
+    return l;
+  }
+
+  /** Re-reads whatever paint, lock and view data somebody watches (called after every edit command and on field_changed). */
+  private async refetchEditCaches(): Promise<void> {
+    await this.refreshWorld();
+    const jobs: Promise<unknown>[] = [];
+    for (const l of this.watchPaint) jobs.push(this.ensurePaint(l).catch(() => undefined));
+    if (this.watchLocks) jobs.push(this.ensureLocks().catch(() => undefined));
+    for (const k of this.watchedViews) {
+      const [name, view] = k.split('@');
+      jobs.push(this.ensureFieldView(name, view as FieldViewName).catch(() => undefined));
+    }
+    await Promise.all(jobs);
+  }
 
   // ---- geometry (Part 9e) ------------------------------------------------------------------------------------------------
   /** River polylines, fetched once per change of the river fields. Rejects with `not_solved` before a solve. */
@@ -261,12 +336,13 @@ export class WbApp {
   private async onEvent(e: WbEvent): Promise<void> {
     switch (e.type) {
       case 'job_progress':
-        this.store.setState({ jobs: { current: { id: e.job, fraction: e.fraction, stage: e.stage, status: 'running', kind: this.variationJobs.has(e.job) ? 'variations' : 'solve' } } });
+        this.store.setState({ jobs: { current: { id: e.job, fraction: e.fraction, stage: e.stage, status: 'running', ...this.jobKind(e.job) } } });
         break;
       case 'job_done': {
         this.doneJobs.set(e.job, e.status);
         const cur = this.store.getState().jobs.current;
-        this.store.setState({ jobs: { current: { id: e.job, fraction: e.status === 'completed' ? 1 : cur?.fraction ?? 0, stage: cur?.stage ?? '', status: e.status, kind: this.variationJobs.has(e.job) ? 'variations' : 'solve' } } });
+        this.store.setState({ jobs: { current: { id: e.job, fraction: e.status === 'completed' ? 1 : cur?.fraction ?? 0, stage: cur?.stage ?? '', status: e.status, ...this.jobKind(e.job) } } });
+        this.refreshJobs.delete(e.job);
         if (this.variationJobs.delete(e.job) && e.status === 'completed') {
           const variations = await this.client.getVariations();
           this.store.setState({ variations, variationFields: {} });
@@ -277,7 +353,7 @@ export class WbApp {
       }
       case 'world_loaded': {
         const mesh = await this.client.getMesh();
-        this.store.setState({ mesh, fields: {}, variations: null, variationFields: {}, rivers: null, outlines: {} });
+        this.store.setState({ mesh, fields: {}, variations: null, variationFields: {}, rivers: null, outlines: {}, paint: {}, locks: null, fieldViews: {} });
         await this.refreshWorld();
         await this.refetchWatched();
         await this.refreshGeometry();
@@ -285,6 +361,7 @@ export class WbApp {
       }
       case 'field_changed':
         await this.refreshWorld();
+        await this.refetchEditCaches();
         await this.refetchWatched(e.names);
         await this.refreshGeometry(e.names);
         break;

@@ -59,6 +59,8 @@ export interface OverlayStyle {
   color: string;
   opacity: number;
   blend: 'normal' | 'multiply' | 'screen';
+  /** Part 9f. `hatch` draws a mask fill as diagonal stripes (locked regions); default solid. Renderers that cannot hatch draw it translucent. */
+  pattern?: 'solid' | 'hatch';
 }
 
 /**
@@ -78,7 +80,22 @@ export interface OverlayOptions {
   animate: boolean;
 }
 
+/** Part 9f. A stroke gesture in tool mode (left button without shift). `cell` is never null: moves outside the map are not reported. */
+export interface StrokeEvent {
+  phase: 'down' | 'move' | 'up' | 'cancel';
+  cell: number | null;
+  x: number;
+  y: number;
+}
+
 export interface Viewport {
+  /**
+   * Part 9f. In tool mode the left button (without shift) draws strokes instead of moving the camera; the right / middle button and shift-drag
+   * keep navigating. Off by default.
+   */
+  setToolMode(on: boolean): void;
+  /** Part 9f. Stroke gestures while tool mode is on: `down`, then `move` each time the pointer enters another cell, then `up` (or `cancel`). */
+  onStroke(listener: (e: StrokeEvent) => void): () => void;
   /** Part 9e. Draws the overlays bottom to top above the scalar layers. Pass [] to clear. Never changes picking or the scalar layers. */
   setOverlays(items: OverlayItem[], opts?: OverlayOptions): void;
   setMesh(mesh: MeshData): void;

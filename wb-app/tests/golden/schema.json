@@ -155,6 +155,246 @@
     "mask",
     "category"
   ],
+  "edit": {
+    "brush": {
+      "falloff_default": "smooth",
+      "falloffs": [
+        "smooth",
+        "linear",
+        "constant",
+        "sharp"
+      ],
+      "radius_default_km": 800.0,
+      "radius_max_km": 5000.0,
+      "radius_min_km": 100.0,
+      "strength_default": 0.6
+    },
+    "layers": [
+      {
+        "id": "elevation",
+        "label": "Elevation",
+        "max": 12000.0,
+        "min": -12000.0,
+        "output": "elevation",
+        "unit": "m"
+      },
+      {
+        "id": "temperature_bias",
+        "label": "Temperature bias",
+        "max": 60.0,
+        "min": -60.0,
+        "output": "temperature",
+        "unit": "K"
+      },
+      {
+        "id": "rainfall_bias",
+        "label": "Rainfall bias",
+        "max": 5.0,
+        "min": -1.0,
+        "output": "precipitation",
+        "unit": "fraction"
+      },
+      {
+        "id": "biome_override",
+        "label": "Biome override",
+        "max": null,
+        "min": 0.0,
+        "output": "biome",
+        "unit": ""
+      }
+    ],
+    "lockable": [
+      "elevation",
+      "temperature",
+      "precipitation",
+      "biome"
+    ],
+    "realism": {
+      "default": 0.0,
+      "fields": [
+        "elevation",
+        "temperature",
+        "precipitation",
+        "biome"
+      ],
+      "max": 100.0,
+      "min": 0.0
+    },
+    "refresh_modes": [
+      {
+        "description": "Warm start, 1-2 representative seasons, the rest extrapolated",
+        "id": "preview",
+        "label": "Preview",
+        "target_ms": 100
+      },
+      {
+        "description": "Warm start, all 12 seasons once",
+        "id": "refined",
+        "label": "Refined",
+        "target_ms_max": 5000
+      },
+      {
+        "description": "Complete spin-up from scratch, honouring paint and locks",
+        "id": "full",
+        "label": "Full solve"
+      }
+    ],
+    "tools": [
+      {
+        "amount": {
+          "default": 400.0,
+          "max": 3000.0,
+          "min": 20.0,
+          "unit": "m"
+        },
+        "hint": "Raise terrain under the brush",
+        "id": "raise",
+        "kind": "paint",
+        "label": "Raise",
+        "layer": "elevation",
+        "needs_value": false,
+        "op": "add",
+        "sign": 1
+      },
+      {
+        "amount": {
+          "default": 400.0,
+          "max": 3000.0,
+          "min": 20.0,
+          "unit": "m"
+        },
+        "hint": "Dig terrain (below sea level makes a lake or sea)",
+        "id": "lower",
+        "kind": "paint",
+        "label": "Lower",
+        "layer": "elevation",
+        "needs_value": false,
+        "op": "add",
+        "sign": -1
+      },
+      {
+        "amount": null,
+        "hint": "Blend each cell toward its neighbours",
+        "id": "smooth",
+        "kind": "paint",
+        "label": "Smooth",
+        "layer": "elevation",
+        "needs_value": false,
+        "op": "smooth"
+      },
+      {
+        "amount": null,
+        "hint": "Pull the terrain toward the mean height under the brush",
+        "id": "flatten",
+        "kind": "paint",
+        "label": "Flatten",
+        "layer": "elevation",
+        "needs_value": false,
+        "op": "flatten"
+      },
+      {
+        "amount": {
+          "default": 4.0,
+          "max": 30.0,
+          "min": 0.5,
+          "unit": "K"
+        },
+        "hint": "Add a temperature bias",
+        "id": "warm",
+        "kind": "paint",
+        "label": "Warmer",
+        "layer": "temperature_bias",
+        "needs_value": false,
+        "op": "add",
+        "sign": 1
+      },
+      {
+        "amount": {
+          "default": 4.0,
+          "max": 30.0,
+          "min": 0.5,
+          "unit": "K"
+        },
+        "hint": "Subtract a temperature bias",
+        "id": "cool",
+        "kind": "paint",
+        "label": "Cooler",
+        "layer": "temperature_bias",
+        "needs_value": false,
+        "op": "add",
+        "sign": -1
+      },
+      {
+        "amount": {
+          "default": 0.3,
+          "max": 2.0,
+          "min": 0.05,
+          "unit": "fraction"
+        },
+        "hint": "Increase rainfall by a fraction",
+        "id": "wetter",
+        "kind": "paint",
+        "label": "Wetter",
+        "layer": "rainfall_bias",
+        "needs_value": false,
+        "op": "add",
+        "sign": 1
+      },
+      {
+        "amount": {
+          "default": 0.3,
+          "max": 1.0,
+          "min": 0.05,
+          "unit": "fraction"
+        },
+        "hint": "Decrease rainfall by a fraction",
+        "id": "drier",
+        "kind": "paint",
+        "label": "Drier",
+        "layer": "rainfall_bias",
+        "needs_value": false,
+        "op": "add",
+        "sign": -1
+      },
+      {
+        "amount": null,
+        "hint": "Override the biome",
+        "id": "biome",
+        "kind": "paint",
+        "label": "Biome",
+        "layer": "biome_override",
+        "needs_value": true,
+        "op": "set",
+        "value_from": "biomes"
+      },
+      {
+        "amount": null,
+        "hint": "Remove paint of the active layer, returning it to the physics",
+        "id": "eraser",
+        "kind": "erase",
+        "label": "Eraser",
+        "layer": "any",
+        "needs_value": false,
+        "op": "erase"
+      },
+      {
+        "hint": "Pin a field in a region; the solver treats it as a boundary condition",
+        "id": "lock",
+        "kind": "lock",
+        "label": "Lock",
+        "locked": true,
+        "needs_field": true
+      },
+      {
+        "hint": "Release locked cells",
+        "id": "unlock",
+        "kind": "lock",
+        "label": "Unlock",
+        "locked": false,
+        "needs_field": true
+      }
+    ]
+  },
   "fields": [
     {
       "colormap": "viridis",

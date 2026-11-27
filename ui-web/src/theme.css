@@ -32,6 +32,10 @@
   --overlay-lake: #3aa0ff;
   --overlay-coast: #10151c;
   --overlay-glacier: #e6f6ff;
+  /* Part 9f: tool marks drawn on the map: brush ring, uncommitted stroke, locked cells (hatched) */
+  --overlay-brush: #101828;
+  --overlay-stroke: #ffb020;
+  --overlay-lock: #7a1fa2;
 }
 
 @media (prefers-color-scheme: dark) {

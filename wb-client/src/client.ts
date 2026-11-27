@@ -1,9 +1,9 @@
 // WebSocket client: typed commands and queries, request/response matching, pushed events, binary frames. Framework-free.
-import { decodeFrame, decodeMesh, decodeOutline, decodeRivers, f32Array } from './frames';
+import { decodeFrame, decodeLocks, decodeMesh, decodeOutline, decodePaint, decodeRivers, f32Array } from './frames';
 import {
   API_VERSION, WIRE_VERSION,
   type Ack, type ApiErrorBody, type CellInfo, type Command, type FieldData, type FieldHeader, type Hello, type MeshData, type MeshHeader,
-  type OutlineData, type Query, type RiversData, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
+  type FieldViewName, type LocksData, type OutlineData, type OutputField, type PaintData, type PaintLayerId, type PaintOp, type Query, type RefreshMode, type RiversData, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
 } from './types';
 
 export class ApiClientError extends Error {
@@ -159,6 +159,14 @@ export class WbClient {
   redo() { return this.command({ type: 'redo' }); }
   variations(count: number, coarse = true) { return this.command({ type: 'variations', count, coarse }); }
 
+  // Part 9f
+  paintStroke(layer: PaintLayerId, op: PaintOp, cells: ArrayLike<number>, weights: ArrayLike<number>, opts: { value?: number | null; strength?: number } = {}) {
+    return this.command({ type: 'paint_stroke', layer, op, cells: Array.from(cells), weights: Array.from(weights), value: opts.value ?? null, strength: opts.strength ?? 1 });
+  }
+  setLock(field: OutputField, cells: ArrayLike<number>, locked: boolean) { return this.command({ type: 'set_lock', field, cells: Array.from(cells), locked }); }
+  setRealism(field: OutputField | 'all', value: number) { return this.command({ type: 'set_realism', field, value }); }
+  refresh(mode: RefreshMode) { return this.command({ type: 'refresh', mode }); }
+
   // ---- queries -------------------------------------------------------------------------------------------------------------
   async queryJson<T>(q: Query): Promise<T> { return (await this.request('query', q)).envelope.result as T; }
   getSchema() { return this.queryJson<Schema>({ type: 'get_schema' }); }
@@ -196,6 +204,23 @@ export class WbClient {
     const f = this.decodeField(r, 'get_variation');
     const h = r.envelope.result as { seed: number; variation: number };
     return { ...f, seed: h.seed, variation: h.variation };
+  }
+
+  /** Part 9f: an output field as `blended` (default), `computed` (physics only) or `painted` (realism 0). */
+  async getFieldView(name: string, view: FieldViewName = 'blended', layer = 0): Promise<FieldData> {
+    return this.decodeField(await this.request('query', { type: 'get_field_view', name, layer, view }), 'get_field_view');
+  }
+
+  async getPaint(layer: PaintLayerId): Promise<PaintData> {
+    const { envelope, frame } = await this.request('query', { type: 'get_paint', layer });
+    if (!frame) throw new ApiClientError('bad_frame', 'get_paint answered without a binary frame');
+    return decodePaint(envelope.result, frame);
+  }
+
+  async getLocks(): Promise<LocksData> {
+    const { envelope, frame } = await this.request('query', { type: 'get_locks' });
+    if (!frame) throw new ApiClientError('bad_frame', 'get_locks answered without a binary frame');
+    return decodeLocks(envelope.result, frame);
   }
 
   private decodeField({ envelope, frame }: { envelope: any; frame?: ReturnType<typeof decodeFrame> }, what: string): FieldData {

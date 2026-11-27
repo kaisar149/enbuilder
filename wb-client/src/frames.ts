@@ -1,5 +1,5 @@
 // Binary frame layout (see wb-server/src/protocol.rs): "WBF1" | u32 LE json_len | json | zero padding to a multiple of 4 | payload.
-import type { MeshData, MeshHeader, OutlineData, RiversData } from './types';
+import type { LocksData, MeshData, MeshHeader, OutlineData, OutputField, PaintData, PaintLayerId, RiversData } from './types';
 
 export interface DecodedFrame {
   header: any;
@@ -75,4 +75,18 @@ export function decodeRivers(h: Layout & { mesh_id: string; version: number; sta
 export function decodeOutline(h: Layout & { mesh_id: string; field: string; threshold: number; version: number; stale: boolean; n_edges: number }, f: DecodedFrame): OutlineData {
   const p = layoutItem(h, 'pairs');
   return { meshId: h.mesh_id, field: h.field, threshold: h.threshold, version: h.version, stale: h.stale, nEdges: h.n_edges, pairs: u32Array(f, p.offset, p.count) };
+}
+
+/** Part 9f: decodes `get_paint` (value then mask). */
+export function decodePaint(h: Layout & { mesh_id: string; layer: PaintLayerId; output: OutputField; generation: number; painted_cells: number }, f: DecodedFrame): PaintData {
+  const v = layoutItem(h, 'value');
+  const m = layoutItem(h, 'mask');
+  return { meshId: h.mesh_id, layer: h.layer, output: h.output, generation: h.generation, paintedCells: h.painted_cells, value: f32Array(f, v.offset, v.count), mask: f32Array(f, m.offset, m.count) };
+}
+
+/** Part 9f: decodes `get_locks` (one u32 array per output field). */
+export function decodeLocks(h: Layout & { mesh_id: string; generation: number }, f: DecodedFrame): LocksData {
+  const cells = {} as Record<OutputField, Uint32Array>;
+  for (const it of h.layout) cells[it.name as OutputField] = u32Array(f, it.offset, it.count);
+  return { meshId: h.mesh_id, generation: h.generation, cells };
 }

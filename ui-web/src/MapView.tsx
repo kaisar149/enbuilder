@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { displayValue, metaOf, selectField } from 'wb-client';
+import { RefreshBadge } from './panels/RefreshBadge';
+import { lockedForLayer, toolOverlayItems } from './tools/overlays';
 import type { WbApp } from 'wb-client';
 import type { MapController } from './state/controller';
 import { viewLayers } from './state/controller';
@@ -28,6 +30,8 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
   const world = useStore(app.store, (s) => s.world);
   const appState = useStore(app.store, (s) => s);
   const ui = useStore(ctl.ui, (s) => s);
+  const editState = useStore(ctl.edit.store, (s) => s);
+  const locks = useStore(app.store, (s) => s.locks);
 
   // create / replace the viewport when the view kind changes
   useEffect(() => {
@@ -37,7 +41,7 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
     const install = (v: Viewport, name: string) => {
       if (cancelled) { v.dispose(); return; }
       made = v; vp.current = v;
-      off = [v.onHover((e) => ctl.hover(e.cell, { x: e.x, y: e.y })), v.onPick((e) => void ctl.pick(e.cell))];
+      off = [v.onHover((e) => ctl.hover(e.cell, { x: e.x, y: e.y })), v.onPick((e) => void ctl.pick(e.cell)), v.onStroke((e) => ctl.handleStroke(e))];
       ctl.setRenderer(name);
       setReady((n) => n + 1);
     };
@@ -47,11 +51,18 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
   }, [ctl, ui.view]);
 
   useEffect(() => { if (mesh) vp.current?.setMesh(mesh); }, [mesh, ready]);
+  useEffect(() => { vp.current?.setToolMode(ui.editOn); }, [ui.editOn, ready]);
+  // Escape abandons the stroke in progress
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') ctl.edit.cancelStroke(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [ctl]);
 
   useEffect(() => {
     const v = viewLayers(appState, ui);
     if (v && mesh) vp.current?.setLayers(v.layers, v.fields, { biomes: schema?.biomes ?? [] });
-  }, [appState.fields, appState.schema, ui.layer, ui.season, mesh, schema, ready]);
+  }, [appState.fields, appState.fieldViews, appState.schema, ui.layer, ui.season, ui.fieldView, mesh, schema, ready]);
 
   // overlays (Part 9e): vectors, lines and masks above the scalar layers, in the stack's order. Colours come from the theme tokens --overlay-<token>.
   useEffect(() => {
@@ -59,8 +70,15 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
     if (!v || !mesh || !host.current) return;
     const css = getComputedStyle(host.current);
     const resolve = (token: string) => css.getPropertyValue(`--overlay-${token}`).trim() || css.color || 'currentColor';
-    v.setOverlays(buildOverlayItems(appState, schema, ui.stack, resolve), { animate: ui.animate });
-  }, [appState.fields, appState.rivers, appState.outlines, schema, ui.stack, ui.animate, mesh, ready]);
+    const tools = toolOverlayItems({
+      mesh,
+      ring: ui.editOn && ui.hoverCell !== null && ctl.edit.tool ? { cell: ui.hoverCell, brush: editState.brush } : null,
+      stroke: editState.preview,
+      locked: lockedForLayer(locks, ui.layer),
+      resolveColor: resolve,
+    });
+    v.setOverlays([...buildOverlayItems(appState, schema, ui.stack, resolve), ...tools], { animate: ui.animate });
+  }, [appState.fields, appState.rivers, appState.outlines, schema, ui.stack, ui.animate, mesh, ready, ui.editOn, ui.hoverCell, ui.layer, editState.brush, editState.preview, editState.toolId, locks]);
 
   // 3D only: relief heights, lighting options, selection, camera reset, benchmark, frame statistics
   const heights = selectField(appState, RELIEF_FIELD)?.values ?? null;
@@ -111,6 +129,7 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
           <button type="button" className={ui.view === '3d' ? 'seg-on' : ''} aria-pressed={ui.view === '3d'} onClick={() => ctl.setView('3d')}>3D world</button>
         </div>
         {ui.view === '3d' && <button type="button" className="btn" onClick={() => ctl.resetCamera()}>Reset view</button>}
+        <RefreshBadge app={app} ctl={ctl} />
       </div>
       <div className="map-host" ref={host} />
       {ui.view === '3d' && ui.hoverPos && ui.hoverCell !== null && (

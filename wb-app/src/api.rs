@@ -23,7 +23,27 @@ pub enum Command {
         #[serde(default = "default_coarse")]
         coarse: bool,
     },
+    /// Part 9f: one brush stroke (batched by the client) on a paint layer (`elevation`, `temperature_bias`, `rainfall_bias`, `biome_override`).
+    /// `weights` are per-cell brush weights in [0, 1] (radius and falloff are applied by the client). One undo step.
+    PaintStroke {
+        layer: String,
+        op: crate::paint::Op,
+        cells: Vec<u32>,
+        weights: Vec<f64>,
+        #[serde(default)]
+        value: Option<f64>,
+        #[serde(default = "default_strength")]
+        strength: f64,
+    },
+    /// Part 9f: lock (`locked: true`, at the current value) or unlock cells of an output field (`elevation`, `temperature`, `precipitation`, `biome`).
+    SetLock { field: String, cells: Vec<u32>, locked: bool },
+    /// Part 9f: realism slider (0..100) for one output field, or `all`. Instant: the view is re-blended, nothing is re-solved.
+    SetRealism { field: String, value: f64 },
+    /// Part 9f: background re-solve after edits. `preview` (warm start, 1-2 seasons), `refined` (warm start, 12 seasons) or `full` (= solve).
+    Refresh { mode: String },
 }
+
+fn default_strength() -> f64 { 1.0 }
 
 fn default_coarse() -> bool { true }
 
@@ -37,6 +57,10 @@ impl Command {
             Command::Undo => "undo",
             Command::Redo => "redo",
             Command::Variations { .. } => "variations",
+            Command::PaintStroke { .. } => "paint_stroke",
+            Command::SetLock { .. } => "set_lock",
+            Command::SetRealism { .. } => "set_realism",
+            Command::Refresh { .. } => "refresh",
         }
     }
 }
@@ -57,7 +81,15 @@ pub enum Query {
     GetRivers,
     /// Part 9e: edges between cells inside a mask (`field > threshold`, default 0.5) and their outside neighbours, binary pairs of cell ids.
     GetOutline { field: String, #[serde(default = "default_threshold")] threshold: f64 },
+    /// Part 9f: an output field in one of three views: `blended` (what `get_field` returns, default), `computed` (physics only) or `painted` (realism 0).
+    GetFieldView { name: String, #[serde(default)] layer: usize, #[serde(default = "default_view")] view: String },
+    /// Part 9f: a paint layer (`value` then `mask`, f32 each).
+    GetPaint { layer: String },
+    /// Part 9f: locked cells per output field (u32 arrays).
+    GetLocks,
 }
+
+fn default_view() -> String { "blended".into() }
 
 fn default_threshold() -> f64 { 0.5 }
 
@@ -103,6 +135,9 @@ pub struct Ack {
     pub invalidated: Vec<String>,
     /// Set by `solve`.
     pub job: Option<u64>,
+    /// Part 9f: extra command result (stroke: `applied`, `skipped_locked`). Absent for older commands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Value>,
 }
 
 /// A query answer: a JSON header plus optional raw little-endian bytes (f32 / u32 arrays, layout described in the header).

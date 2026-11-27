@@ -1,9 +1,10 @@
 // UI-only state and the controller that turns user intent into wb-client calls. No React in here, so it is testable under Node.
 // UI state (selected layer, hover, picked cell) never goes to the core (UI_ARCHITECTURE section 1).
 import {
-  ParamController, Store, WbApp, defaultLayer, fieldKey, layerChoices, layerDecl, seasonVariant, seasonsAvailable, selectField,
-  type CellInfo, type FieldData, type LayerDecl, type WbState,
+  EditController, ParamController, Store, WbApp, defaultLayer, fieldKey, layerChoices, layerDecl, seasonVariant, seasonsAvailable, selectField, viewKey,
+  type CellInfo, type FieldData, type FieldViewName, type LayerDecl, type WbState,
 } from 'wb-client';
+import type { StrokeEvent } from '../viewport/types';
 import { RELIEF_FIELD, initialView3D, type View3DState } from '../viewport/view3d';
 import { dataNeeds, overlayAvailable, buildOverlayItems } from '../layers/items';
 import { emptyStack, isDrawn, stackFromPreset, type LayerStack } from '../layers/stack';
@@ -41,14 +42,20 @@ export interface UiState {
   /** Second cell kept for comparison in the inspector. */
   pinnedCell: number | null;
   pinnedInfo: CellInfo | null;
+  /** Part 9f. Tool mode: the left button paints instead of moving the camera. UI-only. */
+  editOn: boolean;
+  /** Part 9f. Which view of an output field the map shows: the blend (default), the physics only, or what was painted. UI-only. */
+  fieldView: FieldViewName;
 }
 
-export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0, stack: emptyStack(null), animate: false, pendingBase: null, pinnedCell: null, pinnedInfo: null });
+export const initialUi = (): UiState => ({ layer: null, hoverCell: null, pickedCell: null, cellInfo: null, cellError: null, season: null, view: '2d', view3d: initialView3D(), hoverInfo: null, hoverPos: null, renderer: null, frame: null, bench: null, resetNonce: 0, benchNonce: 0, stack: emptyStack(null), animate: false, pendingBase: null, pinnedCell: null, pinnedInfo: null, editOn: false, fieldView: 'blended' });
 
 export class MapController {
   readonly ui = new Store<UiState>(initialUi());
   /** Parameter editing (drafts, debounce, validation messages, presets, undo, variations). Shared by all parameter panels. */
   readonly params: ParamController;
+  /** Part 9f: tools, brush, stroke commit and the preview / refined chain. */
+  readonly edit: EditController;
   private unsub: () => void;
   private shownSeasonKey: string | null = null;
   private stackReady = false;
@@ -57,6 +64,7 @@ export class MapController {
 
   constructor(readonly app: WbApp) {
     this.params = new ParamController(app);
+    this.edit = new EditController(app);
     this.unsub = app.store.subscribe(() => this.sync());
     this.sync();
   }
@@ -86,6 +94,7 @@ export class MapController {
     const pb = this.ui.getState().pendingBase;
     if (pb && s.world.fields.some((f) => f.name === pb)) { this.ui.setState({ pendingBase: null }); void this.selectLayer(pb); }
     this.syncOverlays();
+    this.syncEdit();
     const choices = layerChoices(s.schema, s.world);
     const current = this.ui.getState().layer;
     const stillOk = current && choices.some((c) => c.field === current && c.available);
@@ -107,6 +116,45 @@ export class MapController {
     if (variant) void this.app.ensureField(variant, season!).catch(() => undefined);
     // relief needs the height field, only while the 3D view is on
     if (this.ui.getState().view === '3d' && s.world.solved) void this.app.ensureField(RELIEF_FIELD).catch(() => undefined);
+  }
+
+  /** Part 9f: locked cells are always hatched when any exist; the computed / painted view of the shown field is fetched only when asked for. */
+  private syncEdit(): void {
+    const s = this.app.store.getState();
+    const locks = s.world?.edit?.locks;
+    if (locks && Object.values(locks).some((n) => n > 0)) void this.app.ensureLocks().catch(() => undefined);
+    const { layer, fieldView } = this.ui.getState();
+    if (fieldView !== 'blended' && layer && (s.schema?.edit?.realism.fields as string[] | undefined)?.includes(layer) && s.world?.fields.some((f) => f.name === layer)) {
+      const cached = s.fieldViews[viewKey(layer, fieldView)];
+      const v = s.world.fields.find((f) => f.name === layer)?.version;
+      if (!cached || cached.version !== v || this.viewGen !== s.world.edit?.generation) {
+        this.viewGen = s.world.edit?.generation ?? -1;
+        void this.app.ensureFieldView(layer, fieldView).catch(() => undefined);
+      }
+    }
+  }
+  private viewGen = -1;
+
+  /** Part 9f: turns tool mode on or off. Off also drops an unfinished stroke. */
+  setEditMode(on: boolean): void {
+    if (this.ui.getState().editOn === on) return;
+    if (!on) this.edit.cancelStroke();
+    this.ui.setState({ editOn: on });
+  }
+
+  /** Part 9f: the one entry point for stroke gestures from a viewport. */
+  handleStroke(e: StrokeEvent): void {
+    if (!this.ui.getState().editOn) return;
+    if (e.phase === 'down' && e.cell !== null) this.edit.pointerDown(e.cell);
+    else if (e.phase === 'move' && e.cell !== null) this.edit.pointerMove(e.cell);
+    else if (e.phase === 'up') void this.edit.pointerUp();
+    else if (e.phase === 'cancel') this.edit.cancelStroke();
+  }
+
+  setFieldView(v: FieldViewName): void {
+    this.ui.setState({ fieldView: v });
+    this.viewGen = -1;
+    this.syncEdit();
   }
 
   /** Fetches the data the drawn overlays need (and only that): fields once per version, rivers and outlines once per change. Never sends a command. */
@@ -244,6 +292,11 @@ export function viewLayers(app: WbState, ui: UiState): { layers: LayerDecl[]; fi
   if (!app.schema || !ui.layer) return null;
   let f = selectField(app, ui.layer);
   if (!f) return null;
+  // Part 9f: the physics-only or painted view of an output field replaces the blend while it is selected and fetched
+  if (ui.fieldView !== 'blended') {
+    const alt = app.fieldViews[viewKey(ui.layer, ui.fieldView)];
+    if (alt) f = { ...alt, meta: f.meta };
+  }
   if (ui.season !== null && seasonsAvailable(app.schema, app.world, ui.layer)) {
     const twin = selectField(app, seasonVariant(app.schema, ui.layer)!, ui.season);
     // until the season layer arrives the map keeps showing the previous values; the colour range and palette stay those of the base field

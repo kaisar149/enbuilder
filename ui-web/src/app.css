@@ -124,3 +124,17 @@ button, select { font: inherit; color: inherit; }
 .seasons li { display: flex; justify-content: space-between; gap: 4px; font-variant-numeric: tabular-nums; }
 .seasons li span { color: var(--ink-soft); }
 .seasons-row td { text-align: left; }
+
+/* Part 9f: tools, realism, refresh badge */
+.tool-group { display: grid; gap: var(--space-1); }
+.tool-group-title { font-size: var(--fs-s); color: var(--ink-soft); }
+.tool-brush output { color: var(--ink-soft); margin-left: var(--space-1); }
+.badge { margin-left: auto; padding: 2px var(--space-3); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); font-size: var(--fs-s); color: var(--ink-soft); }
+.badge-run { border-color: var(--accent); color: var(--ink); }
+.badge-run::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: var(--space-2); border-radius: 50%; background: var(--accent); animation: badge-pulse 1s ease-in-out infinite; }
+.badge-error { border-color: var(--bad); color: var(--bad); }
+@keyframes badge-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .badge-run::before { animation: none; } }
+.history li.kind-stroke::marker { content: '\25A0  '; }
+.history li.kind-lock::marker { content: '\25A4  '; }
+.history li.kind-realism::marker { content: '\25D0  '; }

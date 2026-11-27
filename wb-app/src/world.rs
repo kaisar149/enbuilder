@@ -110,11 +110,68 @@ impl From<enbuilder::Error> for SolveError {
     fn from(e: enbuilder::Error) -> Self { SolveError::Failed(e.to_string()) }
 }
 
+/// Part 9f: what the user's edits contribute to a solve. `elevation` replaces the computed terrain (the blend of computed and painted
+/// elevation, locks applied); `pins` are `(field, cells, values)` triples that become FieldStore locks, i.e. boundary conditions the
+/// solver cannot change (`elevation` and `temperature`).
+#[derive(Debug, Clone, Default)]
+pub struct EditInput {
+    pub elevation: Option<Vec<f64>>,
+    pub pins: Vec<(String, Vec<u32>, Vec<f64>)>,
+}
+
+/// Which quality of result a solve or refresh produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quality {
+    Preview,
+    Refined,
+    Full,
+}
+
+impl Quality {
+    pub fn name(self) -> &'static str {
+        match self {
+            Quality::Preview => "preview",
+            Quality::Refined => "refined",
+            Quality::Full => "full",
+        }
+    }
+}
+
+/// Preview thresholds (documented in UI_NOTES): at most two representative seasons, one if the first season alone took longer than this.
+pub const PREVIEW_SEASONS: [usize; 2] = [3, 9];
+pub const PREVIEW_SECOND_SEASON_BUDGET_MS: u128 = 60;
+
+#[derive(Debug, Clone, Copy)]
+pub struct RefreshStats {
+    pub seasons_run: usize,
+    pub ms: u128,
+}
+
+fn apply_edit_input(f: &mut FieldStore, edit: &EditInput) -> enbuilder::Result<()> {
+    f.clear_locks();
+    if let Some(z) = &edit.elevation {
+        f.put("elevation", 1, z.clone())?;
+    }
+    for (name, cells, values) in &edit.pins {
+        if f.has(name) {
+            f.set_cells(name, cells, values, true)?;
+        }
+    }
+    Ok(())
+}
+
 /// Full solve: spin up `spinup_years` years of 12 seasons, take the last year as the climate normals, classify biomes, and publish the
 /// annual means as `temperature` (K) and `precipitation` (kg/m^2/s). `progress(fraction, stage)` is called between steps; `cancel` is
 /// checked between steps (one step = one season of the full climate loop).
-pub fn solve(p: &Params, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str)) -> Result<Solved, SolveError> {
+pub fn solve(p: &Params, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str)) -> Result<Solved, SolveError> { solve_with(p, &EditInput::default(), cancel, progress) }
+
+/// `solve` honouring the user's edits (painted elevation, pinned cells).
+pub fn solve_with(p: &Params, edit: &EditInput, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str)) -> Result<Solved, SolveError> {
     let (domain, mut f) = build_world(p)?;
+    if edit.elevation.as_ref().map(|z| z.len() != domain.n_cells()).unwrap_or(false) {
+        return Err(SolveError::Failed("edit input does not match the mesh".into()));
+    }
+    apply_edit_input(&mut f, edit)?;
     let mut s = pipeline()?;
     enbuilder::seed_land_state(&mut f, 0.075)?;
     let years = g(p, "spinup_years") as usize;
@@ -138,23 +195,100 @@ pub fn solve(p: &Params, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str
     if cancel.load(Ordering::SeqCst) {
         return Err(SolveError::Cancelled);
     }
+    publish(&domain, &mut f)?;
+    progress(1.0, "done");
+    Ok(Solved { domain, fields: f, table: biome_table() })
+}
+
+/// Classify biomes, publish the annual means and run the diagnostic ocean stages on the final state.
+fn publish(domain: &Domain, f: &mut FieldStore) -> Result<(), SolveError> {
     let table = biome_table();
-    classify_biomes(&domain, &mut f, &table)?;
+    classify_biomes(domain, f, &table)?;
+    publish_means(domain, f)?;
+    // Part 9e: one diagnostic pass of the existing ocean stages (wind stress -> curl -> Stommel gyres) on the final state, so `current`,
+    // `current_speed` and `psi` exist for the ocean-current overlay. Uses the last season's wind. No simulation code changed; if a stage
+    // refuses (missing input), the world simply has no `current` and the overlay stays disabled.
+    let _ = ocean_current_diagnostic(domain, f);
+    Ok(())
+}
+
+fn publish_means(domain: &Domain, f: &mut FieldStore) -> Result<(), SolveError> {
     let n = domain.n_cells();
-    let mean = |name: &str| -> Result<Vec<f64>, SolveError> {
+    let mean = |f: &FieldStore, name: &str| -> Result<Vec<f64>, SolveError> {
         let l = f.layers(name)?;
         let d = f.data(name)?;
         Ok((0..n).map(|i| (0..l).map(|k| d[i * l + k]).sum::<f64>() / l as f64).collect())
     };
-    let (t, pr) = (mean("season_temperature")?, mean("season_precipitation")?);
+    let (t, pr) = (mean(f, "season_temperature")?, mean(f, "season_precipitation")?);
     f.put("temperature", 1, t)?;
     f.put("precipitation", 1, pr)?;
-    // Part 9e: one diagnostic pass of the existing ocean stages (wind stress -> curl -> Stommel gyres) on the final state, so `current`,
-    // `current_speed` and `psi` exist for the ocean-current overlay. Uses the last season's wind. No simulation code changed; if a stage
-    // refuses (missing input), the world simply has no `current` and the overlay stays disabled.
-    let _ = ocean_current_diagnostic(&domain, &mut f);
+    Ok(())
+}
+
+/// Part 9f: warm-started re-solve after an edit. `Preview` runs the representative seasons `PREVIEW_SEASONS` (one if the first was slow) and
+/// extrapolates the other seasons by the mean change; `Refined` runs all 12 seasons once. Both start from `prev`'s land state and climate.
+pub fn refresh(prev: &Solved, edit: &EditInput, mode: Quality, cancel: &AtomicBool, progress: &mut dyn FnMut(f64, &str)) -> Result<(Solved, RefreshStats), SolveError> {
+    let t0 = std::time::Instant::now();
+    let domain = prev.domain.clone();
+    let mut f = prev.fields.fork();
+    if edit.elevation.as_ref().map(|z| z.len() != domain.n_cells()).unwrap_or(false) {
+        return Err(SolveError::Failed("edit input does not match the mesh".into()));
+    }
+    apply_edit_input(&mut f, edit)?;
+    let mut s = pipeline()?;
+    let seasons: Vec<usize> = match mode {
+        Quality::Preview => PREVIEW_SEASONS.to_vec(),
+        _ => (0..SEASONS).collect(),
+    };
+    let old = |name: &str| f.data(name).map(|d| d.to_vec());
+    let (old_t, old_p, old_s) = (old("season_temperature")?, old("season_precipitation")?, old("season_soil_moisture")?);
+    let mut ran = vec![];
+    for (idx, &k) in seasons.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(SolveError::Cancelled);
+        }
+        if mode == Quality::Preview && idx == 1 && t0.elapsed().as_millis() > PREVIEW_SECOND_SEASON_BUDGET_MS {
+            break;
+        }
+        let season = (k as f64 + 0.5) / SEASONS as f64;
+        enbuilder::run_land_cycle(&domain, &mut f, &mut s, &[season])?;
+        enbuilder::capture_season(&mut f, k, SEASONS)?;
+        ran.push(k);
+        progress((idx + 1) as f64 / (seasons.len() + 1) as f64, &format!("{} season {}/{}", mode.name(), idx + 1, seasons.len()));
+    }
+    if mode == Quality::Preview && ran.len() < SEASONS {
+        // the seasons that were not run move by the mean change of the ones that were
+        let n = domain.n_cells();
+        let mut layers = |name: &str, old: &[f64], floor: f64| -> Result<(), SolveError> {
+            let mut d = f.data(name)?.to_vec();
+            for i in 0..n {
+                let delta = ran.iter().map(|&k| d[i * SEASONS + k] - old[i * SEASONS + k]).sum::<f64>() / ran.len() as f64;
+                for k in 0..SEASONS {
+                    if !ran.contains(&k) {
+                        d[i * SEASONS + k] = (old[i * SEASONS + k] + delta).max(floor);
+                    }
+                }
+            }
+            f.put(name, SEASONS, d)?;
+            Ok(())
+        };
+        layers("season_temperature", &old_t, 0.0)?;
+        layers("season_precipitation", &old_p, 0.0)?;
+        layers("season_soil_moisture", &old_s, 0.0)?;
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(SolveError::Cancelled);
+    }
+    if mode == Quality::Preview {
+        // cheap: classification and annual means only (no ocean-current diagnostic)
+        classify_biomes(&domain, &mut f, &prev.table)?;
+        publish_means(&domain, &mut f)?;
+    } else {
+        publish(&domain, &mut f)?;
+    }
     progress(1.0, "done");
-    Ok(Solved { domain, fields: f, table })
+    let ms = t0.elapsed().as_millis();
+    Ok((Solved { domain, fields: f, table: prev.table.clone() }, RefreshStats { seasons_run: ran.len(), ms }))
 }
 
 /// Runs `wind_stress`, `wind_stress_curl`/`beta_term` and `ocean_currents` once over `f` (fields: wind, ice_fraction, coriolis_f, elevation).

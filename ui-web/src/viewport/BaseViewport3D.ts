@@ -10,7 +10,7 @@ import { cameraFrame, clampCamera, focusOn, homeCamera, lerpCamera, orbitBy, pan
 import { pickRay } from './pick3d';
 import { arrowTarget, buildOverlay3D, type Overlay3D } from './overlay3d';
 import {
-  DEFAULT_VIEW3D, isOrbit, type AnyCamera, type LayerContext, type OrbitCamera, type OverlayItem, type OverlayOptions, type PickEvent, type View3DOptions, type Viewport3D,
+  DEFAULT_VIEW3D, isOrbit, type AnyCamera, type LayerContext, type OrbitCamera, type OverlayItem, type OverlayOptions, type PickEvent, type StrokeEvent, type View3DOptions, type Viewport3D,
 } from './types';
 
 type Listener<T> = (e: T) => void;
@@ -208,12 +208,16 @@ export abstract class BaseViewport3D implements Viewport3D {
     cancelAnimationFrame(this.raf); cancelAnimationFrame(this.anim);
     this.cleanup.forEach((f) => f());
     this.ro?.disconnect();
-    this.pickL.clear(); this.hoverL.clear(); this.camL.clear();
+    this.pickL.clear(); this.hoverL.clear(); this.camL.clear(); this.strokeL.clear();
     this.onDispose();
     this.canvas.remove();
   }
 
   onPick(l: Listener<PickEvent>) { this.pickL.add(l); return () => this.pickL.delete(l); }
+  private strokeL = new Set<Listener<StrokeEvent>>();
+  private toolMode = false;
+  onStroke(l: Listener<StrokeEvent>) { this.strokeL.add(l); return () => this.strokeL.delete(l); }
+  setToolMode(on: boolean): void { this.toolMode = on; this.canvas.style.cursor = on ? 'crosshair' : 'grab'; }
   onHover(l: Listener<PickEvent>) { this.hoverL.add(l); return () => this.hoverL.delete(l); }
   onCameraChange(l: Listener<AnyCamera>) { this.camL.add(l); return () => this.camL.delete(l); }
 
@@ -283,8 +287,18 @@ export abstract class BaseViewport3D implements Viewport3D {
     let drag: { x: number; y: number; id: number; moved: boolean; pan: boolean } | null = null;
     let hoverRaf = 0, hoverPt = { x: 0, y: 0 };
 
+    let stroke: { id: number; last: number } | null = null;
+    const emitStroke = (phase: StrokeEvent['phase'], cell: number | null, p: { x: number; y: number }) => this.strokeL.forEach((l) => l({ phase, cell, ...p }));
     on('pointerdown', (e) => {
       const p = rel(e);
+      if (this.toolMode && e.button === 0 && !e.shiftKey) {
+        const cell = this.pick(p.x, p.y);
+        if (cell === null) return; // a press beside the globe starts nothing
+        stroke = { id: e.pointerId, last: cell };
+        c.setPointerCapture?.(e.pointerId);
+        emitStroke('down', cell, p);
+        return;
+      }
       cancelAnimationFrame(this.anim);
       drag = { x: p.x, y: p.y, id: e.pointerId, moved: false, pan: e.button === 2 || e.button === 1 || e.shiftKey };
       c.setPointerCapture?.(e.pointerId);
@@ -292,6 +306,11 @@ export abstract class BaseViewport3D implements Viewport3D {
     });
     on('pointermove', (e) => {
       const p = rel(e);
+      if (stroke && stroke.id === e.pointerId) {
+        const cell = this.pick(p.x, p.y);
+        if (cell !== null && cell !== stroke.last) { stroke.last = cell; emitStroke('move', cell, p); }
+        return;
+      }
       if (drag && drag.id === e.pointerId) {
         const dx = p.x - drag.x, dy = p.y - drag.y;
         if (!drag.moved && Math.hypot(dx, dy) < 3) return;
@@ -313,12 +332,13 @@ export abstract class BaseViewport3D implements Viewport3D {
       });
     });
     on('pointerup', (e) => {
+      if (stroke && stroke.id === e.pointerId) { const p = rel(e); stroke = null; emitStroke('up', this.pick(p.x, p.y), p); return; }
       if (!drag || drag.id !== e.pointerId) return;
       const was = drag; drag = null;
-      c.style.cursor = 'grab';
+      c.style.cursor = this.toolMode ? 'crosshair' : 'grab';
       if (!was.moved && !was.pan) { const p = rel(e); const cell = this.pick(p.x, p.y); this.pickL.forEach((l) => l({ cell, ...p })); }
     });
-    on('pointercancel', () => { drag = null; c.style.cursor = 'grab'; });
+    on('pointercancel', () => { drag = null; c.style.cursor = this.toolMode ? 'crosshair' : 'grab'; if (stroke) { stroke = null; emitStroke('cancel', null, { x: -1, y: -1 }); } });
     on('pointerleave', () => {
       if (this.lastHover !== null && this.lastHover !== undefined) { this.lastHover = null; this.hoverL.forEach((l) => l({ cell: null, x: -1, y: -1 })); }
     });
