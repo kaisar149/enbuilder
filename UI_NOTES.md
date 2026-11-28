@@ -255,3 +255,46 @@ No real browser or GPU run (jsdom and the stub renderer only); hatch is not draw
 
 ## Demo script
 Start wb-server and the UI, Solve. Open Paint tools, press Paint on the map, choose Raise, set the radius to about 900 km and drag a ridge across a westerly wind belt, then release. The badge says "Refining: quick preview", then "Refining: refined pass", then "Refined"; switch the map layer to Rainfall and the rain shadow shows behind the ridge. Choose Lock, set Field to Elevation, click a valley (hatched), choose Raise and paint over it: the panel reports the locked cells were left unchanged. Move the Elevation realism slider to 100 to see the physics only, back to 0 for your painting; use Undo in History to remove strokes.
+
+
+# Part 9g additions: diff view, propagation animation, "why" explainer
+
+## Stored versions (wb-app `diffq.rs`)
+Every installed solve or refresh, and every stroke undo that swaps a solved state back, is stored (last 8, oldest dropped) as a version: solved fields, the four output views as the clients saw them (physics + paint + locks), the pins the solve used, a label (`quality: last history label`). Version number = the solved state's `version` (monotonic). Versions are per mesh; comparing across meshes answers `mesh_mismatch`.
+
+## Queries (api_version stays 1, additive; no simulation code changed)
+- `get_versions` -> `{mesh_id, current, max_stored, versions:[{version, label, quality, generation, n_cells, edit_cells}]}`.
+- `get_diff {field, from_version, to_version, min_rel = 0.01}` -> header + binary. Layout table (`name`, `dtype f32`, `count`, `offset`): `delta` (after - before), `before`, `after`, `front`, `dist_km`, each n_cells f32. Header: `field`, `kind`, `display`, `colormap`, `range`, `no_change`, `front_kind`, `min_rel`, `hidden_cells`, `changed_cells_exact`, `summary {changed_cells, peak_abs, mean_abs, changed_area, global_mean_shift, reach_km, edit_cells}`.
+- `get_diff_summary {from_version, to_version, min_rel}` -> JSON: totals (`no_change`, `changed_cells_any_field`, `fields_changed`, `edit_cells`, `reach_km`) and one row per changed field (`field, kind, display, featured, layers, changed_cells, peak_abs, mean_abs, reach_km`), curated fields first.
+- `explain {cell, field, from_version?, to_version?, min_rel}` -> chain as data (below). Without versions: latest against the one before.
+- Errors: `unknown_version`, `mesh_mismatch`, `unknown_field`, `bad_cell`, `not_solved`.
+
+## Diff semantics
+- ChangeSet = every value that differs between the two stored states (common fields, equal layer count; the four output fields from the stored views, so a locked cell is identical in both and is exactly 0). Multi-layer fields (season_*): the layer with the largest change at each cell.
+- Significance: a change counts when it is >= `min_rel` x the largest change of ITS field and >= 1e-4 x the field's value range. Default 1 %: re-running a solve with no edit drifts by about 0.2 % (temperature) to 4 % (rain) of a real edit's effect and by 1e-12 for wind, so without this the ripple would paint the whole planet. `hidden_cells` says how many were dropped; `min_rel = 0` is exact. UI: the checkbox "Hide changes under 1% of the largest".
+- FRONT: the app's land-cycle solve is not traced by the scheduler, so there is no per-cell tick. The core's fallback order is used: surface distance from the edit seeds, then cell id. Seeds = cells whose elevation view or pin differs between the versions (`front_kind: edit`); with none (parameter change, no-edit refresh) the cell with the largest change of that field (`front_kind: peak`). Wire `front` = reveal time in [0, 1] (rank / (changed - 1)) for a changed cell, -1 for an unchanged one. The playhead t shows exactly the cells with `0 <= front <= t`; t = 1 shows exactly the changed cells. `dist_km` is sent too (-1 = unreachable).
+
+## Explainer chain format (`explain`)
+`{mesh_id, from_version, to_version, field, cell, min_rel, changed, found_origin, has_global_hop, origin[], stopped, steps[], text, note}`. Step (effect first, deepest cause last), copied from the core's `Link`: `{index, field, cell, old, new, delta, unit, display, kind, module, hop: local|global|origin|end, dist_km, contributors[], modules[], anomalies[], also[{field, cell}], via_feedback[], source_cells[]}`. `text` is the core's `Explanation::text()` unchanged. `source_cells` = the next link's cell plus the equally ranked alternatives (origin step: cells carrying the origin contributor, at most 2000). Origins: `pin:painted elevation` (elevation cells that differ) and `pin:locked <field>`; anomalies appear as `anomaly:<name>` once Part 8 marks them. The core says it plainly: a link is a measured change plus a real module dependency, but choosing among several candidate causes is a ranking, not a proof.
+
+## Client (wb-client, framework-free)
+`getVersions / getDiff / getDiffSummary / explain`, `decodeDiff`; pure `diffview.ts`: `frameDelta(d, t)`, `revealedCount`, `symmetricRange(d, frac)`, `advancePlayhead`, `sweepCoord(mesh)` (x on a plane, longitude elsewhere) + `compareValues` (before | after | swipe), `stepLine` / `coreLinkLines` / `explainRows`. `DiffController` (store: versions, pair, field, min_rel, summary, diff, explanation): the pair is automatic (previous, latest) until `select()`, `followLatest()` goes back; diffs cached per pair, field and threshold.
+
+## UI (ui-web)
+- The diff is drawn through the ordinary Viewport interface: `state/diffLayer.ts` makes a scalar layer with colormap `diverging` (blue - white - red, centred on zero, symmetric range scaled by the range slider; in Rust `raster.rs` too) whose values are the change revealed so far. Before / After / Swipe use the field's own colormap. Category fields show changed/unchanged. So 2D and 3D (and any future viewport) draw it with no new code.
+- Playhead, compare mode, swipe, range, highlight live in `ctl.diff.ui` (UI-only store, never in a viewport), and the Play timer lives in `DiffUiController`, so a 2D / 3D switch mid-animation keeps the playhead and keeps running.
+- Panels: `diff` (DiffPanel: Show diff, Before / After pickers, Latest two versions, field, Change / Before / After / Swipe, Flip, Play ripple, time slider, colour range, hide-small, summary and table) and `explain` (ExplainPanel: ordered list, each step a button; click highlights its cells with a fill mask, theme token `--overlay-highlight`). Map toolbar button "Diff". With the diff on, a map click asks `explain` for the diffed field.
+- No field name is hard-coded: the diffed field defaults to the map layer if it changed, else the first changed field of the summary. Fields outside the curated schema list diff with the metadata `get_diff` returns.
+
+## Tests
+Rust `wb-app/tests/part9g.rs` (9): self-diff zero; front nondecreasing and ends with exactly the changed cells; before + delta = after = visible field; locked cells never changed / never revealed; explain chain = core text; versions, errors, summary; undo stores the restored version; no-edit re-solve is hidden; dry-basin demo (prints the chain). wb-client `part9g.test.ts` (9, pure + real server). ui-web `part9g_ui.test.tsx` (8, the demo script on a real server). Totals: wb-app 54 + wb-server 13, wb-client 56, ui-web 110.
+
+## NOT verified / known limits
+- No real browser or GPU run (jsdom, stub renderer). The swipe is a sweep by longitude / x in mesh space, not a screen-space wipe; on the 2D map its seam is wherever longitude +-pi falls.
+- The front is distance order, not scheduler passes (no `Trace` in the app solve). A traced solve would give true "pass at which it changed" ticks; `field_diff` already accepts a trace.
+- Measured on res 3: an edit often reaches the whole planet (a basin in the driest land cell changed 90 fields, reach ~19000 km, via pressure and vapour). The chain for a far rain cell is therefore short: `precipitation <- moisture_transport (GLOBAL coupling) <- elevation [origin: pin:painted elevation]`. The explainer shows what the core measured; it does not invent a lake -> humidity -> wind -> rain story.
+- Diff of a preview against a refined version includes the preview's approximation error (about 0.3 K, 5 % rain) on top of the edit; compare refined with refined for clean results.
+- Versions are kept in memory only (8 per session, not saved to world files).
+
+## Demo script
+Start wb-server and the UI, Solve. Paint tools: Paint on the map, Lower, radius 900 km, drag a basin into a dry interior, release; wait for "Refined". Press Diff (map toolbar): the map turns to blue/white/red change. Press Play ripple, drag the Time slider, drag Colour range. Pick Before / After / Swipe, press Flip. Switch to 3D world mid-play: the playhead continues. Click a town far from the basin: "Why did this change?" lists the chain; click a step to light up its cells. Undo in History, then Diff against the first version: "No change".

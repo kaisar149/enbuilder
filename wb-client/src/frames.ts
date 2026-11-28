@@ -1,5 +1,5 @@
 // Binary frame layout (see wb-server/src/protocol.rs): "WBF1" | u32 LE json_len | json | zero padding to a multiple of 4 | payload.
-import type { LocksData, MeshData, MeshHeader, OutlineData, OutputField, PaintData, PaintLayerId, RiversData } from './types';
+import type { DiffData, LocksData, MeshData, MeshHeader, OutlineData, OutputField, PaintData, PaintLayerId, RiversData } from './types';
 
 export interface DecodedFrame {
   header: any;
@@ -89,4 +89,15 @@ export function decodeLocks(h: Layout & { mesh_id: string; generation: number },
   const cells = {} as Record<OutputField, Uint32Array>;
   for (const it of h.layout) cells[it.name as OutputField] = u32Array(f, it.offset, it.count);
   return { meshId: h.mesh_id, generation: h.generation, cells };
+}
+
+/** Part 9g: decodes `get_diff` (delta, before, after, front, dist_km) using the layout table. */
+export function decodeDiff(h: any, f: DecodedFrame): DiffData {
+  const a = (name: string) => { const it = layoutItem(h, name); return f32Array(f, it.offset, it.count); };
+  const { mesh_id, from_version, to_version, n_cells, no_change, front_kind, min_rel, hidden_cells, changed_cells_exact, summary, layout: _l, field: fieldName, name, kind, display, colormap, unit, range, palette } = h;
+  return {
+    field: fieldName ?? name, meshId: mesh_id, from: from_version, to: to_version, nCells: n_cells, kind, noChange: no_change, frontKind: front_kind, minRel: min_rel,
+    hiddenCells: hidden_cells, changedCellsExact: changed_cells_exact, summary, meta: { unit, display, colormap, range: range ?? null, ...(palette ? { palette } : {}) },
+    delta: a('delta'), before: a('before'), after: a('after'), front: a('front'), distKm: a('dist_km'),
+  };
 }

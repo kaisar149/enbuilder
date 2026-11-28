@@ -16,6 +16,8 @@ import { View3DPanel } from './View3DPanel';
 import { WorldPanel } from './WorldPanel';
 import { RealismPanel } from './RealismPanel';
 import { ToolsPanel } from './ToolsPanel';
+import { DiffPanel } from './DiffPanel';
+import { ExplainPanel } from './ExplainPanel';
 
 export interface PanelProps {
   app: WbApp;
@@ -23,5 +25,5 @@ export interface PanelProps {
 }
 
 export const PANEL_COMPONENTS: Record<string, ComponentType<PanelProps>> = {
-  SolvePanel, LayersPanel, WorldPanel, InspectorPanel, LayerStackPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel, View3DPanel, ToolsPanel, RealismPanel,
+  SolvePanel, LayersPanel, WorldPanel, InspectorPanel, LayerStackPanel, LegendPanel, PresetPanel, ParameterPanel, VariationsPanel, SeasonPanel, HistoryPanel, View3DPanel, ToolsPanel, RealismPanel, DiffPanel, ExplainPanel,
 };

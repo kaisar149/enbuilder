@@ -61,3 +61,8 @@ export function lockedForLayer(locks: LocksData | null, layer: string | null): U
   for (const arr of Object.values(locks.cells)) for (const c of arr) all.add(c);
   return Uint32Array.from(all);
 }
+
+/** Part 9g: the cells of a clicked explainer step, drawn as an ordinary fill mask (outline ring would hide single cells at low zoom). */
+export function highlightItem(mesh: MeshData, cells: ArrayLike<number>, color: string): OverlayItem {
+  return { ...base('explain-highlight', 'Explainer step', color, 0.7), kind: 'mask', mode: 'fill', values: cellValues(mesh, cells), threshold: 0 };
+}

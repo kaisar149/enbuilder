@@ -42,7 +42,12 @@ export type Query =
   /** Part 9f */
   | { type: 'get_field_view'; name: string; layer?: number; view?: FieldViewName }
   | { type: 'get_paint'; layer: PaintLayerId }
-  | { type: 'get_locks' };
+  | { type: 'get_locks' }
+  /** Part 9g */
+  | { type: 'get_versions' }
+  | { type: 'get_diff'; field: string; from_version: number; to_version: number; min_rel?: number }
+  | { type: 'get_diff_summary'; from_version: number; to_version: number; min_rel?: number }
+  | { type: 'explain'; cell: number; field: string; from_version?: number; to_version?: number; min_rel?: number };
 
 export interface Ack {
   api_version: number;
@@ -381,4 +386,48 @@ export interface Hello {
   wire_version: number;
   api_version: number;
   server: string;
+}
+
+// ---- Part 9g: versions, diff, explainer ---------------------------------------------------------------------------------------
+
+export interface VersionInfo { version: number; label: string; quality: 'preview' | 'refined' | 'full'; generation: number; n_cells: number; edit_cells: number }
+export interface VersionsData { mesh_id: string; current: number | null; max_stored: number; versions: VersionInfo[] }
+
+/** `get_diff` answer. Arrays are per cell. `front` is the reveal time in [0, 1] of a changed cell, -1 for an unchanged cell. */
+export interface DiffData {
+  field: string;
+  meshId: string;
+  from: number;
+  to: number;
+  nCells: number;
+  kind: string;
+  noChange: boolean;
+  /** 'edit' = distance from the edited cells, 'peak' = from the cell that changed most, 'none' = nothing changed. */
+  frontKind: 'edit' | 'peak' | 'none';
+  minRel: number;
+  hiddenCells: number;
+  changedCellsExact: number;
+  summary: { changed_cells: number; peak_abs: number; mean_abs: number; changed_area: number; global_mean_shift: number; reach_km: number; edit_cells: number };
+  meta: { unit: string; display: { scale: number; offset: number; unit: string }; colormap: string; range: [number, number] | null; palette?: 'biomes' | 'hash' };
+  delta: Float32Array;
+  before: Float32Array;
+  after: Float32Array;
+  front: Float32Array;
+  distKm: Float32Array;
+}
+
+export interface DiffSummaryRow { field: string; kind: string; unit: string; display: { scale: number; offset: number; unit: string }; featured: boolean; layers: number; changed_cells: number; peak_abs: number; mean_abs: number; reach_km: number }
+export interface DiffSummary {
+  mesh_id: string; from_version: number; to_version: number; n_cells: number; no_change: boolean; min_rel: number; fields_changed: number; fields_changed_exact: number;
+  changed_cells_any_field: number; edit_cells: number; reach_km: number; edit_fields: { field: string; cells: number }[]; fields: DiffSummaryRow[];
+}
+
+export interface ExplainStep {
+  index: number; field: string; cell: number; old: number; new: number; delta: number; unit: string; display: { scale: number; offset: number; unit: string }; kind: string;
+  module: string | null; hop: 'local' | 'global' | 'origin' | 'end'; dist_km: number; contributors: string[]; modules: string[]; anomalies: string[];
+  also: { field: string; cell: number }[]; via_feedback: string[]; source_cells: number[];
+}
+export interface Explanation {
+  mesh_id: string; from_version: number; to_version: number; field: string; cell: number; min_rel: number; changed: boolean; found_origin: boolean; has_global_hop: boolean;
+  origin: string[]; stopped: string | null; steps: ExplainStep[]; text: string; note: string;
 }

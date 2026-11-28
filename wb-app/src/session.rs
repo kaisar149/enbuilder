@@ -1,5 +1,6 @@
 //! `Session`: one world with its parameters, solved state, undo history and background job. No UI types, no rendering types.
 use crate::api::*;
+use crate::diffq::{self, Bundle, Snap};
 use crate::paint::{self, Edits, StrokeSpec, OUTPUT_FIELDS, PAINT_LAYERS};
 use crate::params::{self, Scope};
 use crate::variations::{self, Batch};
@@ -120,6 +121,9 @@ pub struct Session {
     last_refresh: Option<(Quality, RefreshStats)>,
     job: Option<Job>,
     variations: Option<VariationSet>,
+    /// Part 9g: stored versions for diff and explain (newest last, at most `diffq::MAX_SNAPSHOTS`) and the cached comparison.
+    snaps: Vec<Snap>,
+    diff_cache: Option<Bundle>,
     next_job: u64,
     tx: Sender<Event>,
     rx: Receiver<Event>,
@@ -179,7 +183,7 @@ impl Session {
         let mut s = Session {
             params: p, preset: preset.into(), domain, elevation, mesh_id: mesh_id.clone(), world_version: 1, version: 1, solved: None,
             undo: vec![], redo: vec![], edits: BTreeMap::new(), view: View::default(), edit_generation: 0, last_refresh: None,
-            job: None, variations: None, next_job: 1, tx, rx, step_delay: Duration::ZERO,
+            job: None, variations: None, snaps: vec![], diff_cache: None, next_job: 1, tx, rx, step_delay: Duration::ZERO,
         };
         s.rebuild_view(&[]);
         let _ = s.tx.send(Event::WorldLoaded { mesh_id, n_cells: s.domain.n_cells() });
@@ -280,6 +284,69 @@ impl Session {
             }
         }
         inp
+    }
+
+
+    // ------------------------------------------------------------------------------------------ Part 9g: stored versions
+
+    fn step_label(s: &Step) -> String {
+        match s {
+            Step::Params(g) => g.label.clone(),
+            Step::Stroke(t) => t.label.clone(),
+            Step::Lock(t) => t.label.clone(),
+            Step::Realism(t) => t.label.clone(),
+        }
+    }
+
+    /// Stores the current solved state (with the output views the clients see) so two versions can be compared later.
+    fn record_snapshot(&mut self) {
+        let Some(st) = self.solved.as_ref() else { return };
+        if self.snaps.iter().any(|s| s.version == st.version) {
+            return;
+        }
+        let what = self.undo.last().map(Self::step_label).unwrap_or_else(|| "initial world".into());
+        let snap = Snap {
+            version: st.version,
+            label: format!("{}: {}", st.quality.name(), what),
+            quality: st.quality.name(),
+            mesh_id: self.mesh_id.clone(),
+            solved: st.solved.clone(),
+            views: self.view.data.clone(),
+            pins: diffq::pins_of(&self.edit_input()),
+            generation: self.edit_generation,
+        };
+        self.snaps.push(snap);
+        while self.snaps.len() > diffq::MAX_SNAPSHOTS {
+            self.snaps.remove(0);
+        }
+    }
+
+    fn snap(&self, version: u64) -> ApiResult<&Snap> { self.snaps.iter().find(|s| s.version == version && s.mesh_id == self.mesh_id).ok_or_else(|| diffq::bad_version(version)) }
+
+    /// (from, to): explicit versions, else the latest stored version against the one before it (against itself when there is only one).
+    fn default_pair(&self, from: Option<u64>, to: Option<u64>) -> ApiResult<(u64, u64)> {
+        let here: Vec<u64> = self.snaps.iter().filter(|s| s.mesh_id == self.mesh_id).map(|s| s.version).collect();
+        let t = match to {
+            Some(t) => t,
+            None => *here.last().ok_or_else(|| ApiError::new("not_solved", "no stored version yet: solve first"))?,
+        };
+        let f = match from {
+            Some(f) => f,
+            None => {
+                let i = here.iter().position(|&v| v == t).ok_or_else(|| diffq::bad_version(t))?;
+                if i == 0 { t } else { here[i - 1] }
+            }
+        };
+        Ok((f, t))
+    }
+
+    fn ensure_bundle(&mut self, from: u64, to: u64) -> ApiResult<()> {
+        if self.diff_cache.as_ref().map(|b| (b.from, b.to) == (from, to)).unwrap_or(false) {
+            return Ok(());
+        }
+        let b = diffq::build(self.snap(from)?, self.snap(to)?)?;
+        self.diff_cache = Some(b);
+        Ok(())
     }
 
     fn solved_state(&self, solved: Solved, quality: Quality) -> SolvedState {
@@ -555,6 +622,7 @@ impl Session {
                 self.edit_generation += 1;
                 let mut changed = self.rebuild_view(&force);
                 if !force.is_empty() {
+                    self.record_snapshot();
                     if let Some(s) = &self.solved {
                         for n in s.solved.fields.names() {
                             if !changed.contains(&n) {
@@ -744,6 +812,7 @@ impl Session {
                 all.push(n);
             }
         }
+        self.record_snapshot();
         let _ = self.tx.send(Event::FieldChanged { names: all, version: self.version });
     }
 
@@ -813,6 +882,22 @@ impl Session {
             Query::GetFieldView { name, layer, view } => self.field_view_query(&name, layer, &view),
             Query::GetPaint { layer } => self.paint_query(&layer),
             Query::GetLocks => Ok(self.locks_query()),
+            Query::GetVersions => Ok(QueryResult { json: diffq::versions_json(&self.snaps, &self.mesh_id, self.solved.as_ref().map(|s| s.version)), binary: vec![] }),
+            Query::GetDiff { field, from_version, to_version, min_rel } => {
+                self.ensure_bundle(from_version, to_version)?;
+                let b = self.diff_cache.as_ref().unwrap();
+                diffq::diff_query(b, &self.domain, &field, &self.mesh_id, min_rel)
+            }
+            Query::GetDiffSummary { from_version, to_version, min_rel } => {
+                self.ensure_bundle(from_version, to_version)?;
+                Ok(QueryResult { json: diffq::summary_query(self.diff_cache.as_ref().unwrap(), &self.domain, &self.mesh_id, min_rel), binary: vec![] })
+            }
+            Query::Explain { cell, field, from_version, to_version, min_rel } => {
+                let (f, t) = self.default_pair(from_version, to_version)?;
+                self.ensure_bundle(f, t)?;
+                let b = self.snap(t)?.clone();
+                diffq::explain_query(self.diff_cache.as_ref().unwrap(), &self.domain, &b, &field, cell, min_rel)
+            }
         }
     }
 

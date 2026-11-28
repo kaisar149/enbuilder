@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { displayValue, metaOf, selectField } from 'wb-client';
 import { RefreshBadge } from './panels/RefreshBadge';
-import { lockedForLayer, toolOverlayItems } from './tools/overlays';
+import { highlightItem, lockedForLayer, toolOverlayItems } from './tools/overlays';
 import type { WbApp } from 'wb-client';
 import type { MapController } from './state/controller';
 import { viewLayers } from './state/controller';
@@ -32,6 +32,8 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
   const ui = useStore(ctl.ui, (s) => s);
   const editState = useStore(ctl.edit.store, (s) => s);
   const locks = useStore(app.store, (s) => s.locks);
+  const dui = useStore(ctl.diff.ui, (s) => s);
+  const dd = useStore(ctl.diff.data.store, (s) => s.diff);
 
   // create / replace the viewport when the view kind changes
   useEffect(() => {
@@ -60,9 +62,9 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
   }, [ctl]);
 
   useEffect(() => {
-    const v = viewLayers(appState, ui);
+    const v = viewLayers(appState, ui, { ui: dui, data: dd });
     if (v && mesh) vp.current?.setLayers(v.layers, v.fields, { biomes: schema?.biomes ?? [] });
-  }, [appState.fields, appState.fieldViews, appState.schema, ui.layer, ui.season, ui.fieldView, mesh, schema, ready]);
+  }, [appState.fields, appState.fieldViews, appState.schema, ui.layer, ui.season, ui.fieldView, mesh, schema, ready, dui.on, dui.t, dui.mode, dui.swipe, dui.rangeFrac, dd]);
 
   // overlays (Part 9e): vectors, lines and masks above the scalar layers, in the stack's order. Colours come from the theme tokens --overlay-<token>.
   useEffect(() => {
@@ -77,8 +79,9 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
       locked: lockedForLayer(locks, ui.layer),
       resolveColor: resolve,
     });
-    v.setOverlays([...buildOverlayItems(appState, schema, ui.stack, resolve), ...tools], { animate: ui.animate });
-  }, [appState.fields, appState.rivers, appState.outlines, schema, ui.stack, ui.animate, mesh, ready, ui.editOn, ui.hoverCell, ui.layer, editState.brush, editState.preview, editState.toolId, locks]);
+    const hl = dui.on && dui.highlight.length ? [highlightItem(mesh, dui.highlight, resolve('highlight'))] : [];
+    v.setOverlays([...buildOverlayItems(appState, schema, ui.stack, resolve), ...tools, ...hl], { animate: ui.animate });
+  }, [dui.on, dui.highlight, appState.fields, appState.rivers, appState.outlines, schema, ui.stack, ui.animate, mesh, ready, ui.editOn, ui.hoverCell, ui.layer, editState.brush, editState.preview, editState.toolId, locks]);
 
   // 3D only: relief heights, lighting options, selection, camera reset, benchmark, frame statistics
   const heights = selectField(appState, RELIEF_FIELD)?.values ?? null;
@@ -129,6 +132,7 @@ export function MapView({ app, ctl }: { app: WbApp; ctl: MapController }) {
           <button type="button" className={ui.view === '3d' ? 'seg-on' : ''} aria-pressed={ui.view === '3d'} onClick={() => ctl.setView('3d')}>3D world</button>
         </div>
         {ui.view === '3d' && <button type="button" className="btn" onClick={() => ctl.resetCamera()}>Reset view</button>}
+        <button type="button" className={`btn${dui.on ? ' btn-on' : ''}`} aria-pressed={dui.on} title="Show what the last edit changed" onClick={() => void ctl.diff.setOn(!dui.on)}>Diff</button>
         <RefreshBadge app={app} ctl={ctl} />
       </div>
       <div className="map-host" ref={host} />

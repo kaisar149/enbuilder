@@ -10,6 +10,9 @@ import { dataNeeds, overlayAvailable, buildOverlayItems } from '../layers/items'
 import { emptyStack, isDrawn, stackFromPreset, type LayerStack } from '../layers/stack';
 import type { OverlayItem } from '../viewport/types';
 import type { BenchResult } from '../viewport/bench';
+import { DiffUiController } from './diffctl';
+import { diffLayer } from './diffLayer';
+import type { DiffData } from 'wb-client';
 
 export interface UiState {
   /** Field shown on the map. */
@@ -56,6 +59,8 @@ export class MapController {
   readonly params: ParamController;
   /** Part 9f: tools, brush, stroke commit and the preview / refined chain. */
   readonly edit: EditController;
+  /** Part 9g: diff view state (playhead, compare mode, range) and its data. */
+  readonly diff: DiffUiController;
   private unsub: () => void;
   private shownSeasonKey: string | null = null;
   private stackReady = false;
@@ -65,11 +70,12 @@ export class MapController {
   constructor(readonly app: WbApp) {
     this.params = new ParamController(app);
     this.edit = new EditController(app);
+    this.diff = new DiffUiController(app, () => this.ui.getState().layer);
     this.unsub = app.store.subscribe(() => this.sync());
     this.sync();
   }
 
-  dispose(): void { this.unsub(); this.params.dispose(); clearTimeout(this.tipTimer); }
+  dispose(): void { this.unsub(); this.diff.dispose(); this.params.dispose(); clearTimeout(this.tipTimer); }
 
   /**
    * Keeps the selection valid: picks the first available layer when none is chosen, and falls back when the chosen field disappears
@@ -276,6 +282,7 @@ export class MapController {
 
   /** Click on the map: read-only `get_cell` query for the inspector. */
   async pick(cell: number | null): Promise<void> {
+    void this.diff.onPick(cell);
     if (cell === null) { this.ui.setState({ pickedCell: null, cellInfo: null, cellError: null }); return; }
     this.ui.setState({ pickedCell: cell, cellError: null });
     try {
@@ -288,8 +295,10 @@ export class MapController {
 }
 
 /** What the viewport should draw right now: layer declarations plus the field data they refer to. Pure function of the two stores. */
-export function viewLayers(app: WbState, ui: UiState): { layers: LayerDecl[]; fields: Record<string, FieldData> } | null {
+export function viewLayers(app: WbState, ui: UiState, diff?: { ui: import('./diffLayer').DiffUiState; data: DiffData | null }): { layers: LayerDecl[]; fields: Record<string, FieldData> } | null {
   if (!app.schema || !ui.layer) return null;
+  // Part 9g: while the diff view is on and loaded, the diff replaces the scalar layer (same Viewport interface, diverging colormap)
+  if (diff?.ui.on) { const dl = diffLayer(app.schema, app.mesh, diff.data, diff.ui); if (dl) return dl; }
   let f = selectField(app, ui.layer);
   if (!f) return null;
   // Part 9f: the physics-only or painted view of an output field replaces the blend while it is selected and fetched

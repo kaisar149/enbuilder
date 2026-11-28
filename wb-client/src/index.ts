@@ -7,3 +7,5 @@ export * from './debounce';
 export * from './params';
 export * from './tools';
 export * from './edit';
+export * from './diffview';
+export * from './diff';

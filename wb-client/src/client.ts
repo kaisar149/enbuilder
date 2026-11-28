@@ -1,9 +1,9 @@
 // WebSocket client: typed commands and queries, request/response matching, pushed events, binary frames. Framework-free.
-import { decodeFrame, decodeLocks, decodeMesh, decodeOutline, decodePaint, decodeRivers, f32Array } from './frames';
+import { decodeDiff, decodeFrame, decodeLocks, decodeMesh, decodeOutline, decodePaint, decodeRivers, f32Array } from './frames';
 import {
   API_VERSION, WIRE_VERSION,
   type Ack, type ApiErrorBody, type CellInfo, type Command, type FieldData, type FieldHeader, type Hello, type MeshData, type MeshHeader,
-  type FieldViewName, type LocksData, type OutlineData, type OutputField, type PaintData, type PaintLayerId, type PaintOp, type Query, type RefreshMode, type RiversData, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
+  type DiffData, type DiffSummary, type Explanation, type VersionsData, type FieldViewName, type LocksData, type OutlineData, type OutputField, type PaintData, type PaintLayerId, type PaintOp, type Query, type RefreshMode, type RiversData, type Schema, type VariationField, type VariationsInfo, type WbEvent, type WorldInfo,
 } from './types';
 
 export class ApiClientError extends Error {
@@ -221,6 +221,19 @@ export class WbClient {
     const { envelope, frame } = await this.request('query', { type: 'get_locks' });
     if (!frame) throw new ApiClientError('bad_frame', 'get_locks answered without a binary frame');
     return decodeLocks(envelope.result, frame);
+  }
+
+  // ---- Part 9g -------------------------------------------------------------------------------------------------------------
+  getVersions(): Promise<VersionsData> { return this.queryJson<VersionsData>({ type: 'get_versions' }); }
+  getDiffSummary(from: number, to: number, minRel = 0.01): Promise<DiffSummary> { return this.queryJson<DiffSummary>({ type: 'get_diff_summary', from_version: from, to_version: to, min_rel: minRel }); }
+  async getDiff(field: string, from: number, to: number, minRel = 0.01): Promise<DiffData> {
+    const { envelope, frame } = await this.request('query', { type: 'get_diff', field, from_version: from, to_version: to, min_rel: minRel });
+    if (!frame) throw new ApiClientError('bad_frame', 'get_diff answered without a binary frame');
+    return decodeDiff(envelope.result, frame);
+  }
+  /** Why did `field` change at `cell`? Without versions: the latest stored version against the one before it. */
+  explain(cell: number, field: string, from?: number, to?: number, minRel = 0.01): Promise<Explanation> {
+    return this.queryJson<Explanation>({ type: 'explain', cell, field, from_version: from, to_version: to, min_rel: minRel });
   }
 
   private decodeField({ envelope, frame }: { envelope: any; frame?: ReturnType<typeof decodeFrame> }, what: string): FieldData {

@@ -138,3 +138,16 @@ button, select { font: inherit; color: inherit; }
 .history li.kind-stroke::marker { content: '\25A0  '; }
 .history li.kind-lock::marker { content: '\25A4  '; }
 .history li.kind-realism::marker { content: '\25D0  '; }
+
+/* Part 9g: diff and explainer panels (colours and sizes come from theme tokens only) */
+.btn-on { outline: 2px solid var(--accent, currentColor); }
+.chain { list-style: decimal; padding-left: 1.4em; margin: 0; display: flex; flex-direction: column; gap: 0.5em; }
+.chain-step { display: flex; flex-direction: column; align-items: flex-start; text-align: left; width: 100%; gap: 0.15em; }
+.chain-on { outline: 2px solid var(--accent, currentColor); }
+.chain-cause { font-size: 0.85em; opacity: 0.8; }
+.row-on td { font-weight: 600; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-2); font-size: var(--fs-s); margin: 0; }
+.kv dt { color: var(--ink-soft); }
+.kv dd { margin: 0; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+.table th, .table td { text-align: left; padding: 2px var(--space-1); }

@@ -36,6 +36,8 @@
   --overlay-brush: #101828;
   --overlay-stroke: #ffb020;
   --overlay-lock: #7a1fa2;
+  /* Part 9g: cells highlighted by a clicked explainer step */
+  --overlay-highlight: #00a884;
 }
 
 @media (prefers-color-scheme: dark) {

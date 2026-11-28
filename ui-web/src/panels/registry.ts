@@ -19,6 +19,8 @@ export const PANEL_REGISTRY: PanelDef[] = [
   { id: 'preset', title: 'Preset', component: 'PresetPanel', default_dock: 'left' },
   { id: 'params', title: 'World laws', component: 'ParameterPanel', default_dock: 'left' },
   { id: 'variations', title: 'Seed and variations', component: 'VariationsPanel', default_dock: 'left' },
+  { id: 'diff', title: 'Diff', component: 'DiffPanel', default_dock: 'right' },
+  { id: 'explain', title: 'Why did this change?', component: 'ExplainPanel', default_dock: 'right' },
   { id: 'season', title: 'Season', component: 'SeasonPanel', default_dock: 'right' },
   { id: 'history', title: 'History', component: 'HistoryPanel', default_dock: 'right' },
   { id: 'world', title: 'World', component: 'WorldPanel', default_dock: 'right' },

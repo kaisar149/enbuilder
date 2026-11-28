@@ -87,7 +87,17 @@ pub enum Query {
     GetPaint { layer: String },
     /// Part 9f: locked cells per output field (u32 arrays).
     GetLocks,
+    /// Part 9g: the stored versions (installed solves and refreshes, newest last) that can be compared. JSON only.
+    GetVersions,
+    /// Part 9g: change of one field between two stored versions: binary `delta`, `before`, `after`, `front`, `dist_km` (f32 each).
+    GetDiff { field: String, from_version: u64, to_version: u64, #[serde(default = "default_min_rel")] min_rel: f64 },
+    /// Part 9g: per-field summary of the same comparison (cells changed, largest change, distance reached). JSON only.
+    GetDiffSummary { from_version: u64, to_version: u64, #[serde(default = "default_min_rel")] min_rel: f64 },
+    /// Part 9g: the causal chain of one cell and field. Without versions: the latest version against the one before it.
+    Explain { cell: usize, field: String, #[serde(default)] from_version: Option<u64>, #[serde(default)] to_version: Option<u64>, #[serde(default = "default_min_rel")] min_rel: f64 },
 }
+
+fn default_min_rel() -> f64 { crate::diffq::DEFAULT_MIN_REL }
 
 fn default_view() -> String { "blended".into() }
 
